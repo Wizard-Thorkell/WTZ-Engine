@@ -10,6 +10,7 @@ using Robust.Client.Utility;
 using Robust.Shared;
 using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Graphics;
 using Robust.Shared.Graphics.RSI;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
@@ -243,5 +244,20 @@ namespace Robust.Client.GameObjects
             Sprite = sprite;
             Viewport = viewport;
         }
+    }
+
+    /// <summary>
+    /// Raised immediately before an entity sprite is rendered. Handlers may
+    /// suppress the draw or apply temporary modulation without mutating the
+    /// replicated <see cref="SpriteComponent"/>.
+    /// </summary>
+    [ByRefEvent]
+    public struct BeforeSpriteRenderEvent(SpriteComponent sprite, IClydeViewport viewport, IEye eye)
+    {
+        public readonly SpriteComponent Sprite = sprite;
+        public readonly IClydeViewport Viewport = viewport;
+        public readonly IEye Eye = eye;
+        public Color Modulate = Color.White;
+        public bool Cancelled;
     }
 }

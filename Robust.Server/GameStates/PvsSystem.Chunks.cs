@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Prometheus;
 using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
+using Robust.Shared.GameStates;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Map.Enumerators;
 using Robust.Shared.Maths;
@@ -18,7 +19,7 @@ namespace Robust.Server.GameStates;
 // Partial class for handling PVS chunks.
 internal sealed partial class PvsSystem
 {
-    public const float ChunkSize = 8;
+    public const float ChunkSize = SharedPvsOverrideSystem.SpatialChunkSize;
 
     private readonly Dictionary<PvsChunkLocation, PvsChunk> _chunks = new();
     private readonly List<PvsChunk> _dirtyChunks = new(64);

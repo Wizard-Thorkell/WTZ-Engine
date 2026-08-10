@@ -316,6 +316,13 @@ namespace Robust.Client.Graphics.Clyde
                     RenderSingleWorldOverlay(overlay, viewport, OverlaySpace.WorldSpaceEntities, worldAABB, worldBounds);
                 }
 
+                var renderEvent = new BeforeSpriteRenderEvent(entry.Sprite, viewport, eye);
+                _entityManager.EventBus.RaiseLocalEvent(entry.Uid, ref renderEvent);
+                if (renderEvent.Cancelled)
+                    continue;
+
+                var worldHandle = _renderHandle.DrawingHandleWorld;
+
                 Vector2i roundedPos = default;
                 if (entry.Sprite.PostShader != null)
                 {
@@ -382,7 +389,16 @@ namespace Robust.Client.Graphics.Clyde
                     }
                 }
 
-                spriteSystem.RenderSprite(new(entry.Uid, entry.Sprite), _renderHandle.DrawingHandleWorld, eye.Rotation, entry.WorldRot, entry.WorldPos);
+                var oldModulate = worldHandle.Modulate;
+                worldHandle.Modulate *= renderEvent.Modulate;
+                try
+                {
+                    spriteSystem.RenderSprite(new(entry.Uid, entry.Sprite), worldHandle, eye.Rotation, entry.WorldRot, entry.WorldPos);
+                }
+                finally
+                {
+                    worldHandle.Modulate = oldModulate;
+                }
 
                 if (entry.Sprite.PostShader != null && entityPostRenderTarget != null)
                 {

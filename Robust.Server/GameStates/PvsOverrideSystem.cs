@@ -23,6 +23,7 @@ public sealed class PvsOverrideSystem : SharedPvsOverrideSystem
     internal HashSet<EntityUid> ForceSend = new();
     internal Dictionary<ICommonSession, HashSet<EntityUid>> SessionOverrides = new();
     internal Dictionary<ICommonSession, HashSet<EntityUid>> SessionForceSend = new();
+    internal Dictionary<ICommonSession, HashSet<EntityUid>> SessionCulling = new();
 
     public override void Initialize()
     {
@@ -98,6 +99,7 @@ public sealed class PvsOverrideSystem : SharedPvsOverrideSystem
 
         SessionOverrides.Remove(ev.Session);
         SessionForceSend.Remove(ev.Session);
+        SessionCulling.Remove(ev.Session);
     }
 
     public override void Shutdown()
@@ -250,6 +252,24 @@ public sealed class PvsOverrideSystem : SharedPvsOverrideSystem
         {
             SessionOverrides.GetOrNew(session).Add(uid);
         }
+    }
+
+    public override void ReplaceSessionCulling(ICommonSession session, IReadOnlyCollection<EntityUid> entities)
+    {
+        if (entities.Count == 0)
+        {
+            SessionCulling.Remove(session);
+            return;
+        }
+
+        var culled = SessionCulling.GetOrNew(session);
+        culled.Clear();
+        culled.UnionWith(entities);
+    }
+
+    public override void ClearSessionCulling(ICommonSession session)
+    {
+        SessionCulling.Remove(session);
     }
 
     #region Map/Grid Events
