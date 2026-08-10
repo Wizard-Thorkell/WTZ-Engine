@@ -841,7 +841,7 @@ namespace Robust.Client.Placement
                         ? Maps.GetTileRef(gridId, grid, coordinates).Tile
                         : Maps.GetZLevelTileRef(gridId, grid, Maps.ZLevelTileIndicesFor(gridId, grid, new ZLevelMapCoordinates(
                             XformSystem.ToMapCoordinates(coordinates).Position,
-                            currentZ,
+                            XformSystem.LocalToWorldZLevel(gridId, currentZ),
                             XformSystem.GetMapId(coordinates)))).Tile;
 
                     if (tileRef.TypeId == CurrentPermission.TileType &&

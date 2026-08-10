@@ -8,7 +8,7 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Map;
 
 /// <summary>
-/// ZLevel experimental tile indices with a discrete vertical layer.
+/// Tile indices whose Z value is local to the owning grid's vertical frame.
 /// </summary>
 [Serializable, NetSerializable]
 public readonly record struct ZLevelTileIndices(int X, int Y, int Z) : ISpanFormattable

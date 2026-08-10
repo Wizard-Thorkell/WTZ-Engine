@@ -161,8 +161,8 @@ public abstract partial class SharedPhysicsSystem
         if (TryComp<TransformComponent>(bodyA.Owner, out var xformA) &&
             TryComp<TransformComponent>(bodyB.Owner, out var xformB))
         {
-            var zA = _transform.GetZLevel((bodyA.Owner, xformA, CompOrNull<ZLevelPositionComponent>(bodyA.Owner)));
-            var zB = _transform.GetZLevel((bodyB.Owner, xformB, CompOrNull<ZLevelPositionComponent>(bodyB.Owner)));
+            var zA = _transform.GetWorldZLevel((bodyA.Owner, xformA, CompOrNull<ZLevelPositionComponent>(bodyA.Owner)));
+            var zB = _transform.GetWorldZLevel((bodyB.Owner, xformB, CompOrNull<ZLevelPositionComponent>(bodyB.Owner)));
             if (zA != zB)
                 return false;
         }

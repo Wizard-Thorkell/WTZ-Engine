@@ -160,7 +160,8 @@ public abstract partial class SharedMapSystem
     public ZLevelTileIndices ZLevelTileIndicesFor(EntityUid uid, MapGridComponent grid, ZLevelMapCoordinates coords)
     {
         var xy = TileIndicesFor(uid, grid, new MapCoordinates(coords.Position, coords.MapId));
-        return new ZLevelTileIndices(xy.X, xy.Y, coords.Z);
+        var localZ = _transform.WorldToLocalZLevel(uid, coords.Z);
+        return new ZLevelTileIndices(xy.X, xy.Y, localZ);
     }
 
     public ZLevelEntityCoordinates ToZLevelCoordinates(EntityUid gridUid, ZLevelTileIndices tile, MapGridComponent? gridComponent = null)
@@ -184,7 +185,7 @@ public abstract partial class SharedMapSystem
     {
         var world = GridTileToWorld(uid, grid, new Vector2i(tile.X, tile.Y));
         var mapId = _xformQuery.GetComponent(uid).MapID;
-        return new ZLevelMapCoordinates(world.Position, tile.Z, mapId);
+        return new ZLevelMapCoordinates(world.Position, _transform.LocalToWorldZLevel(uid, tile.Z), mapId);
     }
 
     public IEnumerable<ZLevelTileIndices> GetZLevelNeighbors(ZLevelTileIndices origin)
@@ -386,7 +387,12 @@ public abstract partial class SharedMapSystem
             return false;
 
         var xy = TileIndicesFor(gridUid, grid, new MapCoordinates(coordinates.Position, coordinates.MapId));
-        return IsZLevelStackOpen(gridUid, grid, xy, fromZ, coordinates.Z);
+        return IsZLevelStackOpen(
+            gridUid,
+            grid,
+            xy,
+            _transform.WorldToLocalZLevel(gridUid, fromZ),
+            _transform.WorldToLocalZLevel(gridUid, coordinates.Z));
     }
 
     public bool TryGetZLevelSupportTile(EntityUid uid, MapGridComponent grid, Vector2i xy, int startZ, int maxDropDepth, out ZLevelTileRef tile)
@@ -413,7 +419,8 @@ public abstract partial class SharedMapSystem
             return false;
 
         var xy = TileIndicesFor(gridUid, grid, new MapCoordinates(coordinates.Position, coordinates.MapId));
-        return TryGetZLevelSupportTile(gridUid, grid, xy, coordinates.Z, maxDropDepth, out tile);
+        var localZ = _transform.WorldToLocalZLevel(gridUid, coordinates.Z);
+        return TryGetZLevelSupportTile(gridUid, grid, xy, localZ, maxDropDepth, out tile);
     }
 
     public IEnumerable<int> GetExistingZLevelLayers(EntityUid uid, MapGridComponent grid)

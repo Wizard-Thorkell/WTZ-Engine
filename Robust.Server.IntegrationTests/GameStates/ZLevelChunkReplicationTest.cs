@@ -25,6 +25,7 @@ public sealed class ZLevelChunkReplicationTest : RobustIntegrationTest
         var mapMan = server.ResolveDependency<IMapManager>();
         var sEntMan = server.ResolveDependency<IEntityManager>();
         var sMap = sEntMan.System<SharedMapSystem>();
+        var sTransform = sEntMan.System<SharedTransformSystem>();
         var confMan = server.ResolveDependency<IConfigurationManager>();
         var sPlayerMan = server.ResolveDependency<ISharedPlayerManager>();
 
@@ -57,6 +58,7 @@ public sealed class ZLevelChunkReplicationTest : RobustIntegrationTest
             var grid = mapMan.CreateGridEntity(mapId);
             gridUid = grid.Owner;
 
+            Assert.That(sTransform.SetZLevelFrameOrigin(gridUid, 3), Is.True);
             sMap.SetTile(grid.Owner, grid.Comp, Vector2i.Zero, new Tile(1));
             sMap.SetZLevelTile(grid.Owner, grid.Comp, zTile, new Tile(2));
 
@@ -83,7 +85,17 @@ public sealed class ZLevelChunkReplicationTest : RobustIntegrationTest
         {
             Assert.That(clientGrid.HasChunk(chunkIndex), Is.True);
             Assert.That(cMap.GetZLevelTileRef(clientGridEntity, clientGrid, zTile).Tile.TypeId, Is.EqualTo((ushort) 2));
+            Assert.That(cEntMan.GetComponent<ZLevelFrameComponent>(clientGridEntity).Origin, Is.EqualTo(3));
         });
+
+        await server.WaitPost(() => Assert.That(sTransform.SetZLevelFrameOrigin(gridUid, 6), Is.True));
+        for (var i = 0; i < 5; i++)
+        {
+            await server.WaitRunTicks(1);
+            await client.WaitRunTicks(1);
+        }
+
+        Assert.That(cEntMan.GetComponent<ZLevelFrameComponent>(clientGridEntity).Origin, Is.EqualTo(6));
 
         await server.WaitPost(() =>
         {

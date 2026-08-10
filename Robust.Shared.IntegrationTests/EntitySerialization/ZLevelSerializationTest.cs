@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Robust.Shared.EntitySerialization.Systems;
@@ -28,6 +29,65 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
 """;
 
     [Test]
+    public async Task ZLevelFrameFollowsGridAcrossMapMovement()
+    {
+        var server = StartServer(new() { Pool = false, ExtraPrototypes = TestPrototypes });
+        await server.WaitIdleAsync();
+
+        var entMan = server.EntMan;
+        var mapSys = server.System<SharedMapSystem>();
+        var transform = server.System<SharedTransformSystem>();
+        var mapMan = server.ResolveDependency<IMapManager>();
+        var tileMan = server.ResolveDependency<ITileDefinitionManager>();
+
+        SerializationTestHelper.LoadTileDefs(server.ProtoMan, tileMan, "space");
+        var upperTile = server.ProtoMan.Index<TileDef>("b");
+
+        await server.WaitAssertion(() =>
+        {
+            mapSys.CreateMap(out var sourceMap);
+            var targetMapUid = mapSys.CreateMap(out var targetMap);
+            var grid = mapMan.CreateGridEntity(sourceMap);
+            var upperIndices = new ZLevelTileIndices(1, 2, 3);
+            mapSys.SetTile(grid.Owner, grid.Comp, new Vector2i(1, 2), new Tile(upperTile.TileId));
+            mapSys.SetZLevelTile(grid.Owner, grid.Comp, upperIndices, new Tile(upperTile.TileId));
+
+            var passenger = entMan.SpawnEntity(null, new EntityCoordinates(grid.Owner, 1.5f, 2.5f));
+            var position = entMan.AddComponent<ZLevelPositionComponent>(passenger);
+            position.ZLevel = 3;
+            position.LocalZOffset = 0.25f;
+            Assert.That(transform.SetZLevelFrameOrigin(grid.Owner, 7), Is.True);
+
+            var gridTransform = entMan.GetComponent<TransformComponent>(grid.Owner);
+            transform.SetCoordinates(
+                grid.Owner,
+                gridTransform,
+                new EntityCoordinates(targetMapUid, new Vector2(20f, -8f)),
+                rotation: Angle.FromDegrees(90));
+
+            var tileMapCoordinates = mapSys.GridTileToZLevelMap(grid.Owner, grid.Comp, upperIndices);
+            var convertedIndices = mapSys.ZLevelTileIndicesFor(grid.Owner, grid.Comp, tileMapCoordinates);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(gridTransform.MapID, Is.EqualTo(targetMap));
+                Assert.That(transform.GetZLevel((passenger, Transform(passenger), position)), Is.EqualTo(3));
+                Assert.That(transform.GetWorldZLevel((passenger, Transform(passenger), position)), Is.EqualTo(10));
+                Assert.That(transform.GetZLevelWorldHeight((passenger, Transform(passenger), position)), Is.EqualTo(10.25f));
+                Assert.That(transform.LocalToWorldZLevel(grid.Owner, 3), Is.EqualTo(10));
+                Assert.That(transform.WorldToLocalZLevel(grid.Owner, 10), Is.EqualTo(3));
+                Assert.That(tileMapCoordinates.Z, Is.EqualTo(10));
+                Assert.That(convertedIndices, Is.EqualTo(upperIndices));
+                Assert.That(mapSys.TryGetZLevelSupportTile(tileMapCoordinates, 0, out var support), Is.True);
+                Assert.That(support.GridIndices, Is.EqualTo(upperIndices));
+                Assert.That(mapSys.GetZLevelTileRef(grid.Owner, grid.Comp, upperIndices).Tile.TypeId, Is.EqualTo(upperTile.TileId));
+            });
+
+            TransformComponent Transform(EntityUid uid) => entMan.GetComponent<TransformComponent>(uid);
+        });
+    }
+
+    [Test]
     public async Task ZLevelTilesRoundTripThroughMapSaveLoad()
     {
         var server = StartServer(new() { Pool = false, ExtraPrototypes = TestPrototypes });
@@ -36,6 +96,7 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
         var entMan = server.EntMan;
         var loader = server.System<MapLoaderSystem>();
         var mapSys = server.System<SharedMapSystem>();
+        var transform = server.System<SharedTransformSystem>();
         var mapMan = server.ResolveDependency<IMapManager>();
         var tileMan = server.ResolveDependency<ITileDefinitionManager>();
         var mapPath = new ResPath($"{nameof(ZLevelSerializationTest)}_map.yml");
@@ -53,6 +114,7 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
             gridUid = mapMan.CreateGridEntity(mapId);
             var grid = entMan.GetComponent<MapGridComponent>(gridUid);
 
+            Assert.That(transform.SetZLevelFrameOrigin(gridUid, 4), Is.True);
             mapSys.SetTile(gridUid, grid, Vector2i.Zero, new Tile(baseTile.TileId));
             mapSys.SetZLevelTile(gridUid, grid, new ZLevelTileIndices(0, 0, 1), new Tile(upperTile.TileId));
             mapSys.SetZLevelTile(gridUid, grid, new ZLevelTileIndices(0, 0, -1), new Tile(baseTile.TileId));
@@ -76,6 +138,7 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
                 Assert.That(mapSys.GetZLevelTileRef(loadedGrid.Owner, loadedGrid.Comp, new ZLevelTileIndices(0, 0, 1)).Tile.TypeId, Is.EqualTo(upperTile.TileId));
                 Assert.That(mapSys.GetZLevelTileRef(loadedGrid.Owner, loadedGrid.Comp, new ZLevelTileIndices(0, 0, -1)).Tile.TypeId, Is.EqualTo(baseTile.TileId));
                 Assert.That(mapSys.GetExistingZLevelLayers(loadedGrid.Owner, loadedGrid.Comp), Is.EquivalentTo(new[] { -1, 0, 1 }));
+                Assert.That(entMan.GetComponent<ZLevelFrameComponent>(loadedGrid.Owner).Origin, Is.EqualTo(4));
             });
         });
     }

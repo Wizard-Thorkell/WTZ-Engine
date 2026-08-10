@@ -11,7 +11,7 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Map;
 
 /// <summary>
-/// ZLevel experimental map coordinates with a discrete vertical layer.
+/// Map coordinates whose Z value is a discrete world layer shared by every grid on the map.
 /// </summary>
 [PublicAPI, DataRecord]
 [Serializable, NetSerializable]

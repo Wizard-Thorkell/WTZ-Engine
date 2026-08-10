@@ -25,6 +25,7 @@ using System.Numerics;
 using NUnit.Framework;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Collision.Shapes;
@@ -188,5 +189,51 @@ internal sealed class Collision_Test
         Assert.That(body1.ContactCount, Is.EqualTo(0));
         Assert.That(body2.ContactCount, Is.EqualTo(0));
         Assert.That(!physics.IsHardCollidable(ent1, ent2));
+    }
+
+    [Test]
+    public void ZLevelFrameOriginsAreAppliedToCollisionFiltering()
+    {
+        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var entManager = sim.Resolve<IEntityManager>();
+        var mapManager = sim.Resolve<IMapManager>();
+        var mapSystem = entManager.System<SharedMapSystem>();
+        var fixtures = entManager.System<FixtureSystem>();
+        var physics = entManager.System<SharedPhysicsSystem>();
+        var transform = entManager.System<SharedTransformSystem>();
+
+        var map = sim.CreateMap();
+        var gridA = mapManager.CreateGridEntity(map.MapId);
+        var gridB = mapManager.CreateGridEntity(map.MapId);
+        transform.SetCoordinates(gridB.Owner, new EntityCoordinates(map.Uid, new Vector2(10f, 0f)));
+        mapSystem.SetTile(gridA.Owner, gridA.Comp, Vector2i.Zero, new Tile(1));
+        mapSystem.SetTile(gridB.Owner, gridB.Comp, Vector2i.Zero, new Tile(1));
+        var entA = entManager.SpawnEntity(null, new EntityCoordinates(gridA.Owner, Vector2.Zero));
+        var entB = entManager.SpawnEntity(null, new EntityCoordinates(gridB.Owner, Vector2.Zero));
+        var bodyA = entManager.AddComponent<PhysicsComponent>(entA);
+        var bodyB = entManager.AddComponent<PhysicsComponent>(entB);
+
+        entManager.AddComponent<ZLevelPositionComponent>(entA).ZLevel = 0;
+        entManager.AddComponent<ZLevelPositionComponent>(entB).ZLevel = 1;
+        fixtures.CreateFixture(entA, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: bodyA);
+        fixtures.CreateFixture(entB, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: bodyB);
+
+        Assert.That(transform.SetZLevelFrameOrigin(gridA.Owner, 5), Is.True);
+        Assert.That(transform.SetZLevelFrameOrigin(gridB.Owner, 4), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(transform.GetWorldZLevel((
+                entA,
+                entManager.GetComponent<TransformComponent>(entA),
+                entManager.GetComponentOrNull<ZLevelPositionComponent>(entA))), Is.EqualTo(5));
+            Assert.That(transform.GetWorldZLevel((
+                entB,
+                entManager.GetComponent<TransformComponent>(entB),
+                entManager.GetComponentOrNull<ZLevelPositionComponent>(entB))), Is.EqualTo(5));
+            Assert.That(physics.IsHardCollidable(entA, entB), Is.True);
+        });
+
+        Assert.That(transform.SetZLevelFrameOrigin(gridB.Owner, 3), Is.True);
+        Assert.That(physics.IsHardCollidable(entA, entB), Is.False);
     }
 }

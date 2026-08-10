@@ -177,6 +177,7 @@ namespace Robust.UnitTesting
                 compFactory.RegisterTypes(ExtraComponents);
 
             compFactory.RegisterClass<ZLevelPositionComponent>();
+            compFactory.RegisterClass<ZLevelFrameComponent>();
             compFactory.RegisterClass<MapSaveTileMapComponent>();
             compFactory.RegisterClass<YamlUidComponent>();
 

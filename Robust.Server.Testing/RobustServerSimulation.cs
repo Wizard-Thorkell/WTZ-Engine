@@ -296,6 +296,7 @@ namespace Robust.UnitTesting.Server
             compFactory.RegisterClass<MetaDataComponent>();
             compFactory.RegisterClass<TransformComponent>();
             compFactory.RegisterClass<ZLevelPositionComponent>();
+            compFactory.RegisterClass<ZLevelFrameComponent>();
             compFactory.RegisterClass<MapGridComponent>();
             compFactory.RegisterClass<MapComponent>();
             compFactory.RegisterClass<MapLightComponent>();

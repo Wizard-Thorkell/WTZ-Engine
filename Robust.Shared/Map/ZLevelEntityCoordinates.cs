@@ -11,7 +11,7 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Map;
 
 /// <summary>
-/// ZLevel experimental entity-local coordinates with a discrete vertical layer.
+/// Entity-local coordinates whose Z value is relative to the reference entity's inherited world layer.
 /// </summary>
 [PublicAPI, DataRecord]
 public readonly partial record struct ZLevelEntityCoordinates(EntityUid EntityId, Vector2 Position, int Z) : ISpanFormattable
