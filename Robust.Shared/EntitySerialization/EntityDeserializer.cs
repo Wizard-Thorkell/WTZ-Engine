@@ -786,7 +786,7 @@ public sealed class EntityDeserializer :
 
             foreach (var (index, chunk) in gridComp.Chunks)
             {
-                if (chunk.FilledTiles > 0)
+                if (!chunk.IsCompletelyEmpty)
                     continue;
 
                 _log.Warning(

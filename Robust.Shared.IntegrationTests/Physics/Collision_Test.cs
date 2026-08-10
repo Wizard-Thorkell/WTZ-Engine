@@ -156,4 +156,37 @@ internal sealed class Collision_Test
 
         Assert.That(body1.ContactCount == 0 && body2.ContactCount == 0);
     }
+
+    [Test]
+    public void CrossZLevelContactsAreIgnored()
+    {
+        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var entManager = sim.Resolve<IEntityManager>();
+        var fixtures = entManager.System<FixtureSystem>();
+        var physics = entManager.System<SharedPhysicsSystem>();
+
+        var map = sim.CreateMap();
+
+        var ent1 = entManager.SpawnEntity(null, new EntityCoordinates(map.Uid, Vector2.Zero));
+        var ent2 = entManager.SpawnEntity(null, new EntityCoordinates(map.Uid, Vector2.Zero));
+
+        var body1 = entManager.AddComponent<PhysicsComponent>(ent1);
+        var body2 = entManager.AddComponent<PhysicsComponent>(ent2);
+        physics.SetBodyType(ent1, BodyType.Dynamic, body: body1);
+        physics.SetBodyType(ent2, BodyType.Dynamic, body: body2);
+
+        entManager.AddComponent<ZLevelPositionComponent>(ent1).ZLevel = 1;
+        entManager.AddComponent<ZLevelPositionComponent>(ent2).ZLevel = 0;
+
+        fixtures.CreateFixture(ent1, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: body1);
+        fixtures.CreateFixture(ent2, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: body2);
+
+        physics.WakeBody(ent1, body: body1);
+        physics.WakeBody(ent2, body: body2);
+        physics.Update(0.01f);
+
+        Assert.That(body1.ContactCount, Is.EqualTo(0));
+        Assert.That(body2.ContactCount, Is.EqualTo(0));
+        Assert.That(!physics.IsHardCollidable(ent1, ent2));
+    }
 }

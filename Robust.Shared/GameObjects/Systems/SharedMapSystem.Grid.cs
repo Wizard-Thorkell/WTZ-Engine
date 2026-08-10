@@ -292,7 +292,7 @@ public abstract partial class SharedMapSystem
         foreach (var chunk in component.Chunks.Values)
         {
             chunk.ValidateChunk();
-            DebugTools.Assert(chunk.FilledTiles > 0);
+            DebugTools.Assert(!chunk.IsCompletelyEmpty);
         }
 #endif
     }
@@ -313,6 +313,7 @@ public abstract partial class SharedMapSystem
 
             // Deleted chunks still need to raise tile-changed events.
             deletedChunk.SuppressCollisionRegeneration = true;
+            var zLevelChanged = new ValueList<ZLevelTileChangedEntry>();
             for (ushort x = 0; x < component.ChunkSize; x++)
             {
                 for (ushort y = 0; y < component.ChunkSize; y++)
@@ -323,7 +324,21 @@ public abstract partial class SharedMapSystem
                     var gridIndices = deletedChunk.ChunkTileToGridTile((x, y));
                     var newTileRef = new TileRef(uid, gridIndices, Tile.Empty);
                     _mapInternal.RaiseOnTileChanged(gridEnt, newTileRef, oldTile, index);
+
+                    foreach (var z in deletedChunk.GetExistingLayersAt(x, y, int.MinValue + 1, int.MaxValue).Where(z => z != 0).ToArray())
+                    {
+                        if (!deletedChunk.TrySetTile(x, y, z, Tile.Empty, out oldTile, out _))
+                            continue;
+
+                        zLevelChanged.Add(new ZLevelTileChangedEntry(Tile.Empty, oldTile, index, new ZLevelTileIndices(gridIndices.X, gridIndices.Y, z)));
+                    }
                 }
+            }
+
+            if (zLevelChanged.Count > 0)
+            {
+                var zEvent = new ZLevelTileChangedEvent(gridEnt, zLevelChanged.ToArray());
+                EntityManager.EventBus.RaiseLocalEvent(gridEnt.Owner, ref zEvent, true);
             }
 
             deletedChunk.CachedBounds = Box2i.Empty;
@@ -339,6 +354,7 @@ public abstract partial class SharedMapSystem
         DebugTools.Assert(data.TileData.Any(x => !x.IsEmpty));
         DebugTools.Assert(data.TileData.Length == component.ChunkSize * component.ChunkSize);
         var changedEntry = new ValueList<TileChangedEntry>();
+        var zLevelChangedEntry = new ValueList<ZLevelTileChangedEntry>();
 
         for (ushort x = 0; x < component.ChunkSize; x++)
         {
@@ -355,8 +371,57 @@ public abstract partial class SharedMapSystem
             }
         }
 
+        var incomingLayers = data.ZLevelTileData ?? new Dictionary<int, Tile[]>();
+        var existingLayers = chunk.GetExistingLayers().Where(z => z != 0).ToArray();
+
+        foreach (var z in existingLayers)
+        {
+            if (incomingLayers.ContainsKey(z))
+                continue;
+
+            for (ushort x = 0; x < component.ChunkSize; x++)
+            {
+                for (ushort y = 0; y < component.ChunkSize; y++)
+                {
+                    if (!chunk.TrySetTile(x, y, z, Tile.Empty, out var oldTile, out _))
+                        continue;
+
+                    var chunkIndex = new Vector2i(x, y);
+                    var gridIndices = chunk.ChunkTileToGridTile(chunkIndex);
+                    zLevelChangedEntry.Add(new ZLevelTileChangedEntry(Tile.Empty, oldTile, chunk.Indices, new ZLevelTileIndices(gridIndices.X, gridIndices.Y, z)));
+                }
+            }
+        }
+
+        foreach (var (z, tileData) in incomingLayers)
+        {
+            DebugTools.Assert(tileData.Length == component.ChunkSize * component.ChunkSize);
+            var zCounter = 0;
+
+            for (ushort x = 0; x < component.ChunkSize; x++)
+            {
+                for (ushort y = 0; y < component.ChunkSize; y++)
+                {
+                    var tile = tileData[zCounter++];
+                    if (!chunk.TrySetTile(x, y, z, tile, out var oldTile, out _))
+                        continue;
+
+                    var chunkIndex = new Vector2i(x, y);
+                    var gridIndices = chunk.ChunkTileToGridTile(chunkIndex);
+                    zLevelChangedEntry.Add(new ZLevelTileChangedEntry(tile, oldTile, chunk.Indices, new ZLevelTileIndices(gridIndices.X, gridIndices.Y, z)));
+                }
+            }
+        }
+
         var ev = new TileChangedEvent(gridEnt, changedEntry.ToArray());
         EntityManager.EventBus.RaiseLocalEvent(gridEnt.Owner, ref ev, true);
+
+        if (zLevelChangedEntry.Count > 0)
+        {
+            var zEvent = new ZLevelTileChangedEvent(gridEnt, zLevelChangedEntry.ToArray());
+            EntityManager.EventBus.RaiseLocalEvent(gridEnt.Owner, ref zEvent, true);
+        }
+
         DebugTools.Assert(chunk.Fixtures.SetEquals(data.Fixtures));
 
         // These should never refer to the same object
@@ -426,7 +491,7 @@ public abstract partial class SharedMapSystem
                 if (_netManager.IsClient)
                     fixtures = new(fixtures);
 
-                chunkData.Add(index, ChunkDatum.CreateModified(tileBuffer, fixtures, chunk.CachedBounds));
+                chunkData.Add(index, ChunkDatum.CreateModified(tileBuffer, fixtures, chunk.CachedBounds, chunk.CopyNonZeroLayerData()));
             }
         }
 
@@ -471,7 +536,7 @@ public abstract partial class SharedMapSystem
             if (_netManager.IsClient)
                 fixtures = new(fixtures);
 
-            chunkData.Add(index, ChunkDatum.CreateModified(tileBuffer, fixtures, chunk.CachedBounds));
+            chunkData.Add(index, ChunkDatum.CreateModified(tileBuffer, fixtures, chunk.CachedBounds, chunk.CopyNonZeroLayerData()));
         }
 
         args.State = new MapGridComponentState(component.ChunkSize, chunkData, component.LastTileModifiedTick);
@@ -639,7 +704,7 @@ public abstract partial class SharedMapSystem
 
             if (mapChunk.FilledTiles > 0)
                 chunkRectangles.Add(mapChunk, rectangles);
-            else
+            else if (mapChunk.IsCompletelyEmpty)
             {
                 // Gone. Reduced to atoms
                 // Need to do this before RemoveChunk because it clears fixtures.
@@ -704,7 +769,7 @@ public abstract partial class SharedMapSystem
         foreach (var chunk in modified)
         {
             DebugTools.Assert(chunk.FilledTiles >= 0);
-            if (chunk.FilledTiles > 0)
+            if (!chunk.IsCompletelyEmpty)
                 continue;
 
             DebugTools.AssertEqual(chunk.Fixtures.Count, 0, "maps should not have grid-chunk fixtures");

@@ -98,6 +98,8 @@ namespace Robust.Server.Placement
 
             var session = _playerManager.GetSessionByChannel(msg.MsgChannel);
             var plyEntity = _entityManager.GetComponentOrNull<TransformComponent>(session.AttachedEntity);
+            // Mapping/editor placement can intentionally target a Z level different from the user's current body.
+            var zLevel = msg.ZLevel;
 
             // Don't have an entity, don't get to place.
             if (plyEntity == null)
@@ -154,6 +156,7 @@ namespace Robust.Server.Placement
                         while (anc.MoveNext(out var ent))
                         {
                             if (!replacementQuery.TryGetComponent(ent, out var repl) ||
+                                GetEntityZLevel(ent.Value) != zLevel ||
                                 repl.Key != key)
                             {
                                 continue;
@@ -173,6 +176,13 @@ namespace Robust.Server.Placement
                 }
 
                 var created = _entityManager.SpawnAttachedTo(entityTemplateName, coordinates, rotation: dirRcv.ToAngle());
+                if (zLevel != 0 || _entityManager.HasComponent<ZLevelPositionComponent>(created))
+                {
+                    var zLevelComp = _entityManager.EnsureComponent<ZLevelPositionComponent>(created);
+                    zLevelComp.ZLevel = zLevel;
+                    zLevelComp.LocalZOffset = 0f;
+                    _entityManager.Dirty(created, zLevelComp);
+                }
 
                 var placementCreateEvent = new PlacementEntityEvent(created, coordinates, PlacementEventAction.Create, msg.MsgChannel.UserId);
                 _entityManager.EventBus.RaiseEvent(EventSource.Local, placementCreateEvent);
@@ -180,23 +190,32 @@ namespace Robust.Server.Placement
             else
             {
                 if (_tileDefinitionManager[tileType].AllowRotationMirror)
-                    PlaceNewTile(tileType, coordinates, msg.MsgChannel.UserId, Tile.DirectionToByte(dirRcv), msg.Mirrored);
+                    PlaceNewTile(tileType, coordinates, msg.MsgChannel.UserId, Tile.DirectionToByte(dirRcv), msg.Mirrored, zLevel);
                 else
-                    PlaceNewTile(tileType, coordinates, msg.MsgChannel.UserId, Tile.DirectionToByte(Direction.South), false);
+                    PlaceNewTile(tileType, coordinates, msg.MsgChannel.UserId, Tile.DirectionToByte(Direction.South), false, zLevel);
             }
         }
 
-        private void PlaceNewTile(int tileType, EntityCoordinates coordinates, NetUserId placingUserId, byte direction, bool mirrored)
+        private void PlaceNewTile(int tileType, EntityCoordinates coordinates, NetUserId placingUserId, byte direction, bool mirrored, int zLevel)
         {
             if (!coordinates.IsValid(_entityManager)) return;
 
             MapGridComponent? grid;
+            var tile = new Tile(tileType, rotationMirroring: (byte)(direction + (mirrored ? 4 : 0)));
 
             EntityUid gridId = coordinates.EntityId;
             if (_entityManager.TryGetComponent(coordinates.EntityId, out grid)
                 || _mapManager.TryFindGridAt(_xformSystem.ToMapCoordinates(coordinates), out gridId, out grid))
             {
-                _maps.SetTile(gridId, grid, coordinates, new Tile(tileType, rotationMirroring: (byte)(direction + (mirrored ? 4 : 0))));
+                if (zLevel == 0)
+                {
+                    _maps.SetTile(gridId, grid, coordinates, tile);
+                }
+                else
+                {
+                    var tilePos = _maps.LocalToTile(gridId, grid, coordinates);
+                    _maps.SetZLevelTile(gridId, grid, new ZLevelTileIndices(tilePos.X, tilePos.Y, zLevel), tile);
+                }
 
                 var placementEraseEvent = new PlacementTileEvent(tileType, coordinates, placingUserId);
                 _entityManager.EventBus.RaiseEvent(EventSource.Local, placementEraseEvent);
@@ -210,7 +229,14 @@ namespace Robust.Server.Placement
 
                 _xformSystem.SetWorldPosition(newGridXform, coordinates.Position - newGrid.Comp.TileSizeHalfVector); // assume bottom left tile origin
                 var tilePos = _maps.WorldToTile(newGrid.Owner, newGrid.Comp, coordinates.Position);
-                _maps.SetTile(newGrid.Owner, newGrid.Comp, tilePos, new Tile(tileType, rotationMirroring: (byte)(direction + (mirrored ? 4 : 0))));
+                if (zLevel == 0)
+                {
+                    _maps.SetTile(newGrid.Owner, newGrid.Comp, tilePos, tile);
+                }
+                else
+                {
+                    _maps.SetZLevelTile(newGrid.Owner, newGrid.Comp, new ZLevelTileIndices(tilePos.X, tilePos.Y, zLevel), tile);
+                }
 
                 var placementEraseEvent = new PlacementTileEvent(tileType, coordinates, placingUserId);
                 _entityManager.EventBus.RaiseEvent(EventSource.Local, placementEraseEvent);
@@ -225,8 +251,9 @@ namespace Robust.Server.Placement
         {
             //TODO: Some form of admin check
             var entity = _entityManager.GetEntity(msg.EntityUid);
+            var zLevel = msg.ZLevel;
 
-            if (!_entityManager.EntityExists(entity))
+            if (!_entityManager.EntityExists(entity) || GetEntityZLevel(entity) != zLevel)
                 return;
 
             var placementEraseEvent = new PlacementEntityEvent(entity,
@@ -246,12 +273,14 @@ namespace Robust.Server.Placement
         {
             var start = _entityManager.GetCoordinates(msg.NetCoordinates);
             var rectSize = msg.RectSize;
+            var zLevel = msg.ZLevel;
 
             foreach (var entity in _lookup.GetEntitiesIntersecting(_xformSystem.GetMapId(start), new Box2(start.Position, start.Position + rectSize)))
             {
                 if (_entityManager.Deleted(entity)
                     || _entityManager.HasComponent<MapGridComponent>(entity)
-                    || _entityManager.HasComponent<ActorComponent>(entity))
+                    || _entityManager.HasComponent<ActorComponent>(entity)
+                    || GetEntityZLevel(entity) != zLevel)
                     continue;
 
                 var xform = _entityManager.GetComponent<TransformComponent>(entity);
@@ -287,6 +316,14 @@ namespace Robust.Server.Placement
                 _entityManager.EventBus.RaiseEvent(EventSource.Local, placementEraseEvent);
                 _entityManager.DeleteEntity(entity);
             }
+        }
+
+        private int GetEntityZLevel(EntityUid uid)
+        {
+            if (!_entityManager.TryGetComponent(uid, out TransformComponent? xform))
+                return 0;
+
+            return _xformSystem.GetZLevel((uid, xform, _entityManager.GetComponentOrNull<ZLevelPositionComponent>(uid)));
         }
 
         /// <summary>

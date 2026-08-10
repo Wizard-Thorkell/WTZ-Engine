@@ -70,7 +70,7 @@ namespace Robust.Server.GameObjects
 
         private bool GridEmpty(Entity<MapGridComponent> entity)
         {
-            return !(GetAllTiles(entity, entity).Any());
+            return entity.Comp.Chunks.Values.All(chunk => chunk.IsCompletelyEmpty);
         }
 
         private void HandleGridEmpty(EntityUid uid, MapGridComponent component, EmptyGridEvent args)

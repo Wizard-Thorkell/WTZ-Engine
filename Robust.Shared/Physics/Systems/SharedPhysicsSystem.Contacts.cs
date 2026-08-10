@@ -769,6 +769,11 @@ public abstract partial class SharedPhysicsSystem
             return false;
         }
 
+        var ourZ = _transform.GetZLevel((uid, xform, CompOrNull<ZLevelPositionComponent>(uid)));
+        var otherZ = _transform.GetZLevel((other, otherXform, CompOrNull<ZLevelPositionComponent>(other)));
+        if (ourZ != otherZ)
+            return false;
+
         if (fixture.Hard && otherFixture.Hard)
         {
             // Prevent self-propelling entities. I.e., prevent a fixture on a static child entity from propelling the

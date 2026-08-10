@@ -111,6 +111,36 @@ internal sealed class MapChunkSerializer : ITypeSerializer<MapChunk, MappingData
             }
         }
 
+        if (version >= 8 && node.TryGet("zTiles", out MappingDataNode? zLayerNode))
+        {
+            foreach (var (zKey, zValue) in zLayerNode.Children)
+            {
+                var z = int.Parse(zKey, System.Globalization.CultureInfo.InvariantCulture);
+                var zTileNode = (ValueDataNode) zValue;
+                var zTileBytes = Convert.FromBase64String(zTileNode.Value);
+
+                using var zStream = new MemoryStream(zTileBytes);
+                using var zReader = new BinaryReader(zStream);
+
+                for (ushort y = 0; y < chunk.ChunkSize; y++)
+                {
+                    for (ushort x = 0; x < chunk.ChunkSize; x++)
+                    {
+                        var id = zReader.ReadInt32();
+                        var flags = zReader.ReadByte();
+                        var variant = zReader.ReadByte();
+                        var rotationMirroring = zReader.ReadByte();
+
+                        var defName = tileMap[id];
+                        id = tileDefinitionManager[defName].TileId;
+
+                        var tile = new Tile(id, flags, variant, rotationMirroring);
+                        chunk.TrySetTile(x, y, z, tile, out _, out _);
+                    }
+                }
+            }
+        }
+
         chunk.SuppressCollisionRegeneration = false;
         mapManager.SuppressOnTileChanged = false;
 
@@ -121,7 +151,7 @@ internal sealed class MapChunkSerializer : ITypeSerializer<MapChunk, MappingData
         IDependencyCollection dependencies, bool alwaysWrite = false,
         ISerializationContext? context = null)
     {
-        DebugTools.Assert(value.FilledTiles > 0, "Attempting to write an empty chunk");
+        DebugTools.Assert(!value.IsCompletelyEmpty, "Attempting to write an empty chunk");
         var root = new MappingDataNode();
         var ind = new ValueDataNode($"{value.X},{value.Y}");
         root.Add("ind", ind);
@@ -129,9 +159,13 @@ internal sealed class MapChunkSerializer : ITypeSerializer<MapChunk, MappingData
         var gridNode = new ValueDataNode();
         root.Add("tiles", gridNode);
 
-        root.Add("version", new ValueDataNode("7"));
+        root.Add("version", new ValueDataNode("8"));
 
         gridNode.Value = SerializeTiles(value, context as EntitySerializer);
+
+        var zLayers = SerializeZLevelTiles(value, context as EntitySerializer);
+        if (zLayers != null)
+            root.Add("zTiles", zLayers);
 
         return root;
     }
@@ -185,6 +219,82 @@ internal sealed class MapChunkSerializer : ITypeSerializer<MapChunk, MappingData
         return Convert.ToBase64String(barr);
     }
 
+    private static MappingDataNode? SerializeZLevelTiles(MapChunk chunk, EntitySerializer? serializer)
+    {
+        var layers = new List<int>();
+        foreach (var z in chunk.GetExistingLayers())
+        {
+            if (z == 0)
+                continue;
+
+            layers.Add(z);
+        }
+
+        layers.Sort();
+
+        if (layers.Count == 0)
+            return null;
+
+        var root = new MappingDataNode();
+        foreach (var z in layers)
+        {
+            var key = z.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            root.Add(key,
+                new ValueDataNode(SerializeTiles(chunk, serializer, z)));
+        }
+
+        return root;
+    }
+
+    private static string SerializeTiles(MapChunk chunk, EntitySerializer? serializer, int z)
+    {
+        const int structSize = 7;
+
+        var nTiles = chunk.ChunkSize * chunk.ChunkSize * structSize;
+        var barr = new byte[nTiles];
+
+        using (var stream = new MemoryStream(barr))
+        using (var writer = new BinaryWriter(stream))
+        {
+            if (serializer == null)
+            {
+                for (ushort y = 0; y < chunk.ChunkSize; y++)
+                {
+                    for (ushort x = 0; x < chunk.ChunkSize; x++)
+                    {
+                        var tile = chunk.GetTile(x, y, z);
+                        writer.Write(tile.TypeId);
+                        writer.Write((byte) tile.Flags);
+                        writer.Write(tile.Variant);
+                        writer.Write(tile.RotationMirroring);
+                    }
+                }
+
+                return Convert.ToBase64String(barr);
+            }
+
+            var lastTile = -1;
+            var yamlId = -1;
+            for (ushort y = 0; y < chunk.ChunkSize; y++)
+            {
+                for (ushort x = 0; x < chunk.ChunkSize; x++)
+                {
+                    var tile = chunk.GetTile(x, y, z);
+                    if (tile.TypeId != lastTile)
+                        yamlId = serializer.GetYamlTileId(tile.TypeId);
+
+                    lastTile = tile.TypeId;
+                    writer.Write(yamlId);
+                    writer.Write((byte) tile.Flags);
+                    writer.Write(tile.Variant);
+                    writer.Write(tile.RotationMirroring);
+                }
+            }
+        }
+
+        return Convert.ToBase64String(barr);
+    }
+
     public MapChunk CreateCopy(
         ISerializationManager serializationManager,
         MapChunk source,
@@ -204,6 +314,20 @@ internal sealed class MapChunkSerializer : ITypeSerializer<MapChunk, MappingData
             for (ushort x = 0; x < chunk.ChunkSize; x++)
             {
                 chunk.TrySetTile(x, y, source.GetTile(x, y), out _, out _);
+            }
+        }
+
+        foreach (var z in source.GetExistingLayers())
+        {
+            if (z == 0)
+                continue;
+
+            for (ushort y = 0; y < chunk.ChunkSize; y++)
+            {
+                for (ushort x = 0; x < chunk.ChunkSize; x++)
+                {
+                    chunk.TrySetTile(x, y, z, source.GetTile(x, y, z), out _, out _);
+                }
             }
         }
 

@@ -22,6 +22,12 @@ namespace Robust.Client.Placement
         PlacementMode? CurrentMode { get; set; }
         PlacementInformation? CurrentPermission { get; set; }
 
+        /// <summary>
+        /// Optional explicit z-level used by editor placement tools.
+        /// When null, placement falls back to the local player's current z-level.
+        /// </summary>
+        int? ActiveZLevelOverride { get; set; }
+
         IEntityManager EntityManager { get; }
         IEyeManager EyeManager { get; }
         IMapManager MapManager { get; }

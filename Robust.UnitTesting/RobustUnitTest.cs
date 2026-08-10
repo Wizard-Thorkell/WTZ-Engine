@@ -176,6 +176,7 @@ namespace Robust.UnitTesting
             if (ExtraComponents != null)
                 compFactory.RegisterTypes(ExtraComponents);
 
+            compFactory.RegisterClass<ZLevelPositionComponent>();
             compFactory.RegisterClass<MapSaveTileMapComponent>();
             compFactory.RegisterClass<YamlUidComponent>();
 

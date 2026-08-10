@@ -18,25 +18,31 @@ namespace Robust.Shared.GameStates
         // Optimize away future coder.
         // Also it's stored row-major.
         public readonly Tile[]? TileData;
+        public readonly Dictionary<int, Tile[]>? ZLevelTileData;
 
         public readonly Box2i? CachedBounds;
 
-        [MemberNotNullWhen(false, nameof(TileData), nameof(Fixtures))]
+        [MemberNotNullWhen(false, nameof(TileData), nameof(Fixtures), nameof(CachedBounds))]
         public bool IsDeleted()
         {
             return TileData == null;
         }
 
-        private ChunkDatum(Tile[] tileData, HashSet<string> fixtures, Box2i cachedBounds)
+        private ChunkDatum(Tile[] tileData, Dictionary<int, Tile[]>? zLevelTileData, HashSet<string> fixtures, Box2i cachedBounds)
         {
             TileData = tileData;
+            ZLevelTileData = zLevelTileData;
             Fixtures = fixtures;
             CachedBounds = cachedBounds;
         }
 
-        public static ChunkDatum CreateModified(Tile[] tileData, HashSet<string> fixtures, Box2i cachedBounds)
+        public static ChunkDatum CreateModified(
+            Tile[] tileData,
+            HashSet<string> fixtures,
+            Box2i cachedBounds,
+            Dictionary<int, Tile[]>? zLevelTileData = null)
         {
-            return new ChunkDatum(tileData, fixtures, cachedBounds);
+            return new ChunkDatum(tileData, zLevelTileData, fixtures, cachedBounds);
         }
     }
 }

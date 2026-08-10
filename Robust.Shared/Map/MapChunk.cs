@@ -1,3 +1,6 @@
+// DragonStation Z-Level prototype.
+// Copyright (c) pedel and OpenAI Codex.
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,16 +28,20 @@ namespace Robust.Shared.Map
         private readonly Vector2i _gridIndices;
 
         [ViewVariables] internal readonly Tile[,] Tiles;
+        private Dictionary<int, Tile[,]>? _layerTiles;
+        private Dictionary<int, int>? _layerFilledTiles;
         private readonly SnapGridCell[,] _snapGrid;
 
         /// <summary>
         /// Keeps a running count of the number of filled tiles in this chunk.
         /// </summary>
         /// <remarks>
-        /// This will always be between 1 and <see cref="ChunkSize"/>^2.
+        /// This will always be between 0 and <see cref="ChunkSize"/>^2.
         /// </remarks>
         [ViewVariables]
         internal int FilledTiles { get; set; }
+
+        public bool IsCompletelyEmpty => FilledTiles == 0 && (_layerFilledTiles == null || _layerFilledTiles.Count == 0);
 
         /// <summary>
         /// Chunk-local AABB of this chunk.
@@ -114,6 +121,28 @@ namespace Robust.Shared.Map
         public Tile GetTile(Vector2i indices)
         {
             return Tiles[indices.X, indices.Y];
+        }
+
+        public Tile GetTile(ushort xIndex, ushort yIndex, int z)
+        {
+            if (z == 0)
+                return GetTile(xIndex, yIndex);
+
+            if (_layerTiles == null || !_layerTiles.TryGetValue(z, out var tiles))
+                return Tile.Empty;
+
+            if (xIndex >= ChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(xIndex), "Tile indices out of bounds.");
+
+            if (yIndex >= ChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(yIndex), "Tile indices out of bounds.");
+
+            return tiles[xIndex, yIndex];
+        }
+
+        public Tile GetTile(Vector2i indices, int z)
+        {
+            return GetTile((ushort) indices.X, (ushort) indices.Y, z);
         }
 
         /// <summary>
@@ -259,6 +288,143 @@ namespace Robust.Shared.Map
             return true;
         }
 
+        internal bool TrySetTile(ushort xIndex, ushort yIndex, int z, Tile tile, out Tile oldTile, out bool shapeChanged)
+        {
+            if (z == 0)
+                return TrySetTile(xIndex, yIndex, tile, out oldTile, out shapeChanged);
+
+            if (xIndex >= Tiles.Length)
+                throw new ArgumentOutOfRangeException(nameof(xIndex), "Tile indices out of bounds.");
+
+            if (yIndex >= Tiles.Length)
+                throw new ArgumentOutOfRangeException(nameof(yIndex), "Tile indices out of bounds.");
+
+            shapeChanged = false;
+
+            Tile[,]? tiles = null;
+            if ((_layerTiles == null || !_layerTiles.TryGetValue(z, out tiles)) && tile.IsEmpty)
+            {
+                oldTile = Tile.Empty;
+                return false;
+            }
+
+            tiles ??= GetOrAddLayer(z);
+            ref var tileRef = ref tiles[xIndex, yIndex];
+            if (tileRef == tile)
+            {
+                oldTile = default;
+                return false;
+            }
+
+            _layerFilledTiles ??= new Dictionary<int, int>();
+            _layerFilledTiles.TryGetValue(z, out var filledTiles);
+
+            if (tileRef.IsEmpty)
+            {
+                if (!tile.IsEmpty)
+                    filledTiles += 1;
+            }
+            else if (tile.IsEmpty)
+            {
+                filledTiles -= 1;
+            }
+
+            oldTile = tileRef;
+            tileRef = tile;
+
+            if (filledTiles <= 0)
+            {
+                _layerFilledTiles.Remove(z);
+                _layerTiles?.Remove(z);
+
+                if (_layerTiles is { Count: 0 })
+                    _layerTiles = null;
+
+                if (_layerFilledTiles.Count == 0)
+                    _layerFilledTiles = null;
+            }
+            else
+            {
+                _layerFilledTiles[z] = filledTiles;
+            }
+
+            return true;
+        }
+
+        public IEnumerable<int> GetExistingLayers()
+        {
+            if (FilledTiles > 0)
+                yield return 0;
+
+            if (_layerFilledTiles == null)
+                yield break;
+
+            foreach (var layer in _layerFilledTiles.Keys)
+            {
+                yield return layer;
+            }
+        }
+
+        public Dictionary<int, Tile[]>? CopyNonZeroLayerData()
+        {
+            if (_layerTiles == null || _layerTiles.Count == 0)
+                return null;
+
+            var data = new Dictionary<int, Tile[]>(_layerTiles.Count);
+            foreach (var (z, tiles) in _layerTiles)
+            {
+                var buffer = new Tile[ChunkSize * ChunkSize];
+                for (var x = 0; x < ChunkSize; x++)
+                {
+                    for (var y = 0; y < ChunkSize; y++)
+                    {
+                        buffer[x * ChunkSize + y] = tiles[x, y];
+                    }
+                }
+
+                data[z] = buffer;
+            }
+
+            return data;
+        }
+
+        public IEnumerable<int> GetExistingLayersAt(ushort xIndex, ushort yIndex, int minZ, int maxZ)
+        {
+            if (xIndex >= ChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(xIndex), "Tile indices out of bounds.");
+
+            if (yIndex >= ChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(yIndex), "Tile indices out of bounds.");
+
+            if (minZ > maxZ)
+                yield break;
+
+            if (minZ <= 0 && maxZ >= 0 && !Tiles[xIndex, yIndex].IsEmpty)
+                yield return 0;
+
+            if (_layerTiles == null)
+                yield break;
+
+            foreach (var (z, tiles) in _layerTiles)
+            {
+                if (z < minZ || z > maxZ || tiles[xIndex, yIndex].IsEmpty)
+                    continue;
+
+                yield return z;
+            }
+        }
+
+        private Tile[,] GetOrAddLayer(int z)
+        {
+            _layerTiles ??= new Dictionary<int, Tile[,]>();
+            if (_layerTiles.TryGetValue(z, out var tiles))
+                return tiles;
+
+            tiles = new Tile[ChunkSize, ChunkSize];
+            _layerTiles[z] = tiles;
+            return tiles;
+        }
+
         [Conditional("DEBUG")]
         public void ValidateChunk()
         {
@@ -269,6 +435,30 @@ namespace Robust.Shared.Map
                     totalFilled += 1;
             }
             DebugTools.Assert(totalFilled == FilledTiles);
+        }
+
+        [Conditional("DEBUG")]
+        public void ValidateZLevelLayers()
+        {
+            if (_layerTiles == null)
+            {
+                DebugTools.Assert(_layerFilledTiles == null || _layerFilledTiles.Count == 0);
+                return;
+            }
+
+            foreach (var (z, tiles) in _layerTiles)
+            {
+                var totalFilled = 0;
+                foreach (var tile in tiles)
+                {
+                    if (!tile.IsEmpty)
+                        totalFilled += 1;
+                }
+
+                DebugTools.Assert(_layerFilledTiles != null);
+                DebugTools.Assert(_layerFilledTiles.TryGetValue(z, out var filledTiles));
+                DebugTools.Assert(totalFilled == filledTiles);
+            }
         }
     }
 

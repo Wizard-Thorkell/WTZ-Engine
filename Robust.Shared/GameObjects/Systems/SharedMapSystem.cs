@@ -1,3 +1,6 @@
+// DragonStation Z-Level prototype.
+// Copyright (c) pedel and OpenAI Codex.
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
@@ -231,6 +234,34 @@ namespace Robust.Shared.GameObjects
         /// <summary>
         /// Was the tile previously empty or is it now empty.
         /// </summary>
+        public bool EmptyChanged => OldTile.IsEmpty != NewTile.IsEmpty;
+    }
+
+    /// <summary>
+    /// Raised directed at the grid when ZLevel non-zero layer tiles are changed locally.
+    /// Legacy <see cref="TileChangedEvent"/> continues to describe only the base 2D tile layer.
+    /// </summary>
+    [ByRefEvent]
+    public readonly record struct ZLevelTileChangedEvent
+    {
+        public ZLevelTileChangedEvent(Entity<MapGridComponent> entity, ZLevelTileRef newTile, Tile oldTile, Vector2i chunkIndex)
+            : this(entity, [new ZLevelTileChangedEntry(newTile.Tile, oldTile, chunkIndex, newTile.GridIndices)]) { }
+
+        public ZLevelTileChangedEvent(Entity<MapGridComponent> entity, ZLevelTileChangedEntry[] changes)
+        {
+            Entity = entity;
+            Changes = changes;
+        }
+
+        public readonly Entity<MapGridComponent> Entity;
+        public readonly ZLevelTileChangedEntry[] Changes;
+    }
+
+    /// <summary>
+    /// Data about a single ZLevel tile that was changed as part of a <see cref="ZLevelTileChangedEvent"/>.
+    /// </summary>
+    public readonly record struct ZLevelTileChangedEntry(Tile NewTile, Tile OldTile, Vector2i ChunkIndex, ZLevelTileIndices GridIndices)
+    {
         public bool EmptyChanged => OldTile.IsEmpty != NewTile.IsEmpty;
     }
 }

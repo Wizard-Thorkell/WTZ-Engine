@@ -65,7 +65,7 @@ namespace Robust.Client.Placement
         /// Dictionary of all placement mode types
         /// </summary>
         private readonly Dictionary<string, Type> _modeDictionary = new();
-        private readonly List<Tuple<EntityCoordinates, TimeSpan>> _pendingTileChanges = new();
+        private readonly List<Tuple<EntityCoordinates, int, TimeSpan>> _pendingTileChanges = new();
 
         /// <summary>
         /// Tells this system to try to handle placement of an entity during the next frame
@@ -108,6 +108,8 @@ namespace Robust.Client.Placement
         public bool Eraser { get; private set; }
 
         public bool Replacement { get; set; } = true;
+
+        public int? ActiveZLevelOverride { get; set; }
 
         /// <summary>
         /// Holds the selection rectangle for the eraser
@@ -237,6 +239,7 @@ namespace Robust.Client.Placement
             }
 
             EntityManager.EventBus.SubscribeEvent<TileChangedEvent>(EventSource.Local, this, HandleTileChanged);
+            EntityManager.EventBus.SubscribeEvent<ZLevelTileChangedEvent>(EventSource.Local, this, HandleZLevelTileChanged);
 
             _drawOverlay = new PlacementOverlay(this);
             _overlayManager.AddOverlay(_drawOverlay);
@@ -383,7 +386,20 @@ namespace Robust.Client.Placement
                 args.Entity.Comp,
                 change.GridIndices);
 
-                _pendingTileChanges.RemoveAll(c => c.Item1 == coords);
+                _pendingTileChanges.RemoveAll(c => c.Item1 == coords && c.Item2 == 0);
+            }
+        }
+
+        private void HandleZLevelTileChanged(ref ZLevelTileChangedEvent args)
+        {
+            foreach (var change in args.Changes)
+            {
+                var coords = Maps.GridTileToLocal(
+                    args.Entity,
+                    args.Entity.Comp,
+                    new Vector2i(change.GridIndices.X, change.GridIndices.Y));
+
+                _pendingTileChanges.RemoveAll(c => c.Item1 == coords && c.Item2 == change.GridIndices.Z);
             }
         }
 
@@ -476,10 +492,12 @@ namespace Robust.Client.Placement
         {
             if (!IsActive || !Eraser) return;
             if (Hijack != null && Hijack.HijackDeletion(entity)) return;
+            if (!IsOnCurrentPlacementLevel(entity)) return;
 
             var msg = new MsgPlacement();
             msg.PlaceType = PlacementManagerMessage.RequestEntRemove;
             msg.EntityUid = EntityManager.GetNetEntity(entity);
+            msg.ZLevel = GetCurrentPlacementZLevel();
             _networkManager.ClientSendMessage(msg);
         }
 
@@ -489,6 +507,7 @@ namespace Robust.Client.Placement
             msg.PlaceType = PlacementManagerMessage.RequestRectRemove;
             msg.NetCoordinates = new NetCoordinates(EntityManager.GetNetEntity(StartPoint.EntityId), rect.BottomLeft);
             msg.RectSize = rect.Size;
+            msg.ZLevel = GetCurrentPlacementZLevel();
             _networkManager.ClientSendMessage(msg);
         }
 
@@ -625,7 +644,7 @@ namespace Robust.Client.Placement
             CurrentMode!.AlignPlacementMode(mouseScreen);
 
             // purge old unapproved tile changes
-            _pendingTileChanges.RemoveAll(c => c.Item2 < _time.RealTime);
+            _pendingTileChanges.RemoveAll(c => c.Item3 < _time.RealTime);
 
             // continues tile placement but placement of entities only occurs on mouseUp
             if (_placenextframe && CurrentPermission!.IsTile && !_gridFrameBuffer)
@@ -810,6 +829,7 @@ namespace Robust.Client.Placement
 
             if (CurrentPermission.IsTile)
             {
+                var currentZ = GetCurrentPlacementZLevel();
                 var gridIdOpt = XformSystem.GetGrid(coordinates);
                 // If we have actually placed something on a valid grid...
                 if (gridIdOpt is { } gridId && gridId.IsValid())
@@ -817,7 +837,13 @@ namespace Robust.Client.Placement
                     var grid = EntityManager.GetComponent<MapGridComponent>(gridId);
 
                     // no point changing the tile to the same thing.
-                    var tileRef = Maps.GetTileRef(gridId, grid, coordinates).Tile;
+                    var tileRef = currentZ == 0
+                        ? Maps.GetTileRef(gridId, grid, coordinates).Tile
+                        : Maps.GetZLevelTileRef(gridId, grid, Maps.ZLevelTileIndicesFor(gridId, grid, new ZLevelMapCoordinates(
+                            XformSystem.ToMapCoordinates(coordinates).Position,
+                            currentZ,
+                            XformSystem.GetMapId(coordinates)))).Tile;
+
                     if (tileRef.TypeId == CurrentPermission.TileType &&
                         tileRef.RotationMirroring == Tile.DirectionToByte(Direction) + (Mirrored ? 4 : 0))
                         return;
@@ -826,11 +852,11 @@ namespace Robust.Client.Placement
                 foreach (var tileChange in _pendingTileChanges)
                 {
                     // if change already pending, ignore it
-                    if (tileChange.Item1 == coordinates)
+                    if (tileChange.Item1 == coordinates && tileChange.Item2 == currentZ)
                         return;
                 }
 
-                var tuple = new Tuple<EntityCoordinates, TimeSpan>(coordinates, _time.RealTime + PendingTileTimeout);
+                var tuple = new Tuple<EntityCoordinates, int, TimeSpan>(coordinates, currentZ, _time.RealTime + PendingTileTimeout);
                 _pendingTileChanges.Add(tuple);
             }
 
@@ -854,10 +880,42 @@ namespace Robust.Client.Placement
 
             // world x and y
             message.NetCoordinates = EntityManager.GetNetCoordinates(coordinates);
+            message.ZLevel = GetCurrentPlacementZLevel();
 
             message.DirRcv = Direction;
 
             _networkManager.ClientSendMessage(message);
+        }
+
+        private int GetCurrentPlacementZLevel()
+        {
+            if (ActiveZLevelOverride is { } zLevel)
+                return zLevel;
+
+            if (PlayerManager.LocalEntity is not { } ent ||
+                !EntityManager.TryGetComponent(ent, out TransformComponent? xform))
+            {
+                return 0;
+            }
+
+            return XformSystem.GetZLevel((ent, xform, EntityManager.GetComponentOrNull<ZLevelPositionComponent>(ent)));
+        }
+
+        private bool IsOnCurrentPlacementLevel(EntityUid entity)
+        {
+            if (PlayerManager.LocalEntity is not { } player ||
+                !EntityManager.TryGetComponent(player, out TransformComponent? playerXform) ||
+                !EntityManager.TryGetComponent(entity, out TransformComponent? entityXform))
+            {
+                return false;
+            }
+
+            if (playerXform.MapID != entityXform.MapID)
+                return false;
+
+            var currentZ = GetCurrentPlacementZLevel();
+            var entityZ = XformSystem.GetZLevel((entity, entityXform, EntityManager.GetComponentOrNull<ZLevelPositionComponent>(entity)));
+            return currentZ == entityZ;
         }
 
         public enum PlacementTypes : byte

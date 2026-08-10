@@ -9,7 +9,7 @@ namespace Robust.Client.Map
     /// <summary>
     ///     Stores a texture atlas of all the tile definitions for efficient rendering.
     /// </summary>
-    internal interface IClydeTileDefinitionManager : ITileDefinitionManager
+    public interface IClydeTileDefinitionManager : ITileDefinitionManager
     {
         Box2 ErrorTileRegion { get; }
 

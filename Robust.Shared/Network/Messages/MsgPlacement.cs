@@ -39,6 +39,11 @@ namespace Robust.Shared.Network.Messages
         /// </summary>
         public bool Mirrored { get; set; }
 
+        /// <summary>
+        /// Active z-level of the user performing the placement action.
+        /// </summary>
+        public int ZLevel { get; set; }
+
         public override void ReadFromBuffer(NetIncomingMessage buffer, IRobustSerializer serializer)
         {
             PlaceType = (PlacementManagerMessage) buffer.ReadByte();
@@ -55,6 +60,7 @@ namespace Robust.Shared.Network.Messages
                     NetCoordinates = buffer.ReadNetCoordinates();
                     DirRcv = (Direction)buffer.ReadByte();
                     Mirrored = buffer.ReadBoolean();
+                    ZLevel = buffer.ReadVariableInt32();
                     break;
                 case PlacementManagerMessage.StartPlacement:
                     Range = buffer.ReadInt32();
@@ -67,10 +73,12 @@ namespace Robust.Shared.Network.Messages
                     throw new NotImplementedException();
                 case PlacementManagerMessage.RequestEntRemove:
                     EntityUid = new NetEntity(buffer.ReadInt32());
+                    ZLevel = buffer.ReadVariableInt32();
                     break;
                 case PlacementManagerMessage.RequestRectRemove:
                     NetCoordinates = buffer.ReadNetCoordinates();
                     RectSize = buffer.ReadVector2();
+                    ZLevel = buffer.ReadVariableInt32();
                     break;
             }
         }
@@ -91,6 +99,7 @@ namespace Robust.Shared.Network.Messages
                     buffer.Write(NetCoordinates);
                     buffer.Write((byte)DirRcv);
                     buffer.Write(Mirrored);
+                    buffer.WriteVariableInt32(ZLevel);
                     break;
                 case PlacementManagerMessage.StartPlacement:
                     buffer.Write(Range);
@@ -103,10 +112,12 @@ namespace Robust.Shared.Network.Messages
                     throw new NotImplementedException();
                 case PlacementManagerMessage.RequestEntRemove:
                     buffer.Write((int)EntityUid);
+                    buffer.WriteVariableInt32(ZLevel);
                     break;
                 case PlacementManagerMessage.RequestRectRemove:
                     buffer.Write(NetCoordinates);
                     buffer.Write(RectSize);
+                    buffer.WriteVariableInt32(ZLevel);
                     break;
             }
         }
