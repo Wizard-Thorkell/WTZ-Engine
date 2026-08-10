@@ -6,11 +6,14 @@ using System.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Robust.Shared.GameObjects;
+using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
+using Robust.Shared.Network;
 using Robust.Shared.Serialization.Manager;
+using Robust.Shared.Timing;
 using Robust.UnitTesting;
 
 namespace Robust.Server.IntegrationTests.Maps;
@@ -24,6 +27,7 @@ internal sealed class ZLevelMapTests : RobustUnitTest
     private IMapManager _mapMan = default!;
     private SharedMapSystem _mapSys = default!;
     private SharedTransformSystem _xform = default!;
+    private IGameTiming _timing = default!;
 
     private MapId _mapId;
     private Entity<MapGridComponent> _grid;
@@ -38,9 +42,144 @@ internal sealed class ZLevelMapTests : RobustUnitTest
         _mapMan = IoCManager.Resolve<IMapManager>();
         _mapSys = _entMan.System<SharedMapSystem>();
         _xform = _entMan.System<SharedTransformSystem>();
+        _timing = IoCManager.Resolve<IGameTiming>();
+
+        var netManager = IoCManager.Resolve<INetManager>();
+        if (!netManager.IsServer)
+            netManager.Initialize(true);
 
         _mapSys.CreateMap(out _mapId);
         _grid = _mapMan.CreateGridEntity(_mapId);
+    }
+
+    [Test]
+    public void EmptyZLevelWriteDoesNotAllocateChunk()
+    {
+        var tile = new ZLevelTileIndices(2048, 2048, 4);
+        var chunkIndex = SharedMapSystem.GetChunkIndices(new Vector2i(tile.X, tile.Y), _grid.Comp.ChunkSize);
+        var chunkCount = _grid.Comp.ChunkCount;
+
+        Assert.That(_grid.Comp.HasChunk(chunkIndex), NUnit.Framework.Is.False);
+
+        _mapSys.SetZLevelTile(_grid.Owner, _grid.Comp, tile, Tile.Empty);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_grid.Comp.HasChunk(chunkIndex), NUnit.Framework.Is.False);
+            Assert.That(_grid.Comp.ChunkCount, NUnit.Framework.Is.EqualTo(chunkCount));
+        });
+    }
+
+    [Test]
+    public void ZLevelOnlyChunkStateRoundTripsAndReplicatesDeletion()
+    {
+        var source = _mapMan.CreateGridEntity(_mapId);
+        var target = _mapMan.CreateGridEntity(_mapId);
+        var keepAlive = new Vector2i(-2048, -2048);
+        var targetOnly = new Vector2i(8192, 8192);
+        var upper = new ZLevelTileIndices(4096, 4096, 7);
+        var chunkIndex = SharedMapSystem.GetChunkIndices(new Vector2i(upper.X, upper.Y), source.Comp.ChunkSize);
+        var targetOnlyChunk = SharedMapSystem.GetChunkIndices(targetOnly, target.Comp.ChunkSize);
+
+        _mapSys.SetTile(source.Owner, source.Comp, keepAlive, new Tile(1));
+        _mapSys.SetTile(target.Owner, target.Comp, keepAlive, new Tile(1));
+        _mapSys.SetTile(target.Owner, target.Comp, targetOnly, new Tile(3));
+        _mapSys.SetZLevelTile(source.Owner, source.Comp, upper, new Tile(2));
+
+        var getFullState = new ComponentGetState(null, GameTick.Zero);
+        _entMan.EventBus.RaiseComponentEvent(source.Owner, source.Comp, ref getFullState);
+        var fullState = (MapGridComponentState) getFullState.State!;
+        var zChunk = fullState.FullGridData[chunkIndex];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(zChunk.TileData, NUnit.Framework.Is.All.Matches<Tile>(tile => tile.IsEmpty));
+            Assert.That(zChunk.ZLevelTileData, Contains.Key(upper.Z));
+            Assert.That(zChunk.ZLevelTileData![upper.Z], Has.Some.Matches<Tile>(tile => !tile.IsEmpty));
+        });
+
+        var handleFullState = new ComponentHandleState(fullState, null);
+        _entMan.EventBus.RaiseComponentEvent(target.Owner, target.Comp, ref handleFullState);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(target.Comp.HasChunk(chunkIndex), NUnit.Framework.Is.True);
+            Assert.That(target.Comp.HasChunk(targetOnlyChunk), NUnit.Framework.Is.False);
+            Assert.That(_mapSys.GetZLevelTileRef(target.Owner, target.Comp, upper).Tile.TypeId, NUnit.Framework.Is.EqualTo((ushort) 2));
+        });
+
+        var originalTick = _timing.CurTick;
+        try
+        {
+            _timing.CurTick += 1;
+            var fromTick = _timing.CurTick;
+            _mapSys.SetZLevelTile(source.Owner, source.Comp, upper, Tile.Empty);
+
+            var getDeltaState = new ComponentGetState(null, fromTick);
+            _entMan.EventBus.RaiseComponentEvent(source.Owner, source.Comp, ref getDeltaState);
+            var deltaState = (MapGridComponentDeltaState) getDeltaState.State!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(source.Comp.HasChunk(chunkIndex), NUnit.Framework.Is.False);
+                Assert.That(deltaState.ChunkData, Contains.Key(chunkIndex));
+                Assert.That(deltaState.ChunkData![chunkIndex].IsDeleted(), NUnit.Framework.Is.True);
+            });
+
+            var handleDeltaState = new ComponentHandleState(deltaState, null);
+            _entMan.EventBus.RaiseComponentEvent(target.Owner, target.Comp, ref handleDeltaState);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(target.Comp.HasChunk(chunkIndex), NUnit.Framework.Is.False);
+                Assert.That(_mapSys.GetZLevelTileRef(target.Owner, target.Comp, upper).Tile.IsEmpty, NUnit.Framework.Is.True);
+            });
+        }
+        finally
+        {
+            _timing.CurTick = originalTick;
+        }
+    }
+
+    [Test]
+    public void RepeatedZLevelChunkDeletionProducesSingleDeltaEntry()
+    {
+        var keepAlive = new Vector2i(-4096, -4096);
+        var zTile = new ZLevelTileIndices(12288, 12288, 5);
+        var chunkIndex = SharedMapSystem.GetChunkIndices(new Vector2i(zTile.X, zTile.Y), _grid.Comp.ChunkSize);
+        var originalTick = _timing.CurTick;
+
+        _mapSys.SetTile(_grid.Owner, _grid.Comp, keepAlive, new Tile(1));
+        _mapSys.SetZLevelTile(_grid.Owner, _grid.Comp, zTile, new Tile(2));
+
+        try
+        {
+            _timing.CurTick += 1;
+            var fromTick = _timing.CurTick;
+            _mapSys.SetZLevelTile(_grid.Owner, _grid.Comp, zTile, Tile.Empty);
+
+            _timing.CurTick += 1;
+            _mapSys.SetZLevelTile(_grid.Owner, _grid.Comp, zTile, new Tile(2));
+
+            _timing.CurTick += 1;
+            _mapSys.SetZLevelTile(_grid.Owner, _grid.Comp, zTile, Tile.Empty);
+
+            var getDeltaState = new ComponentGetState(null, fromTick);
+            _entMan.EventBus.RaiseComponentEvent(_grid.Owner, _grid.Comp, ref getDeltaState);
+            var deltaState = (MapGridComponentDeltaState) getDeltaState.State!;
+            var chunkData = deltaState.ChunkData!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(chunkData, Contains.Key(chunkIndex));
+                Assert.That(chunkData.Count(pair => pair.Key == chunkIndex), NUnit.Framework.Is.EqualTo(1));
+                Assert.That(chunkData[chunkIndex].IsDeleted(), NUnit.Framework.Is.True);
+            });
+        }
+        finally
+        {
+            _timing.CurTick = originalTick;
+        }
     }
 
     [Test]

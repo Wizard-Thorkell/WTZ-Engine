@@ -267,7 +267,7 @@ public abstract partial class SharedMapSystem
                 component.LastTileModifiedTick = state.LastTileModifiedTick;
                 component.ChunkSize = state.ChunkSize;
 
-                foreach (var index in component.Chunks.Keys)
+                foreach (var index in component.Chunks.Keys.ToArray())
                 {
                     if (!state.FullGridData.ContainsKey(index))
                         ApplyChunkData(uid, component, index, ChunkDatum.Empty);
@@ -292,6 +292,7 @@ public abstract partial class SharedMapSystem
         foreach (var chunk in component.Chunks.Values)
         {
             chunk.ValidateChunk();
+            chunk.ValidateZLevelLayers();
             DebugTools.Assert(!chunk.IsCompletelyEmpty);
         }
 #endif
@@ -318,12 +319,12 @@ public abstract partial class SharedMapSystem
             {
                 for (ushort y = 0; y < component.ChunkSize; y++)
                 {
-                    if (!deletedChunk.TrySetTile(x, y, Tile.Empty, out var oldTile, out _))
-                        continue;
-
                     var gridIndices = deletedChunk.ChunkTileToGridTile((x, y));
-                    var newTileRef = new TileRef(uid, gridIndices, Tile.Empty);
-                    _mapInternal.RaiseOnTileChanged(gridEnt, newTileRef, oldTile, index);
+                    if (deletedChunk.TrySetTile(x, y, Tile.Empty, out var oldTile, out _))
+                    {
+                        var newTileRef = new TileRef(uid, gridIndices, Tile.Empty);
+                        _mapInternal.RaiseOnTileChanged(gridEnt, newTileRef, oldTile, index);
+                    }
 
                     foreach (var z in deletedChunk.GetExistingLayersAt(x, y, int.MinValue + 1, int.MaxValue).Where(z => z != 0).ToArray())
                     {
@@ -351,7 +352,7 @@ public abstract partial class SharedMapSystem
         chunk.Fixtures.UnionWith(data.Fixtures);
 
         chunk.SuppressCollisionRegeneration = true;
-        DebugTools.Assert(data.TileData.Any(x => !x.IsEmpty));
+        DebugTools.Assert(data.HasAnyTiles());
         DebugTools.Assert(data.TileData.Length == component.ChunkSize * component.ChunkSize);
         var changedEntry = new ValueList<TileChangedEntry>();
         var zLevelChangedEntry = new ValueList<ZLevelTileChangedEntry>();
@@ -458,7 +459,7 @@ public abstract partial class SharedMapSystem
                 // Chunk may have been re-added sometime after it was deleted, but before deletion history was culled.
                 if (!component.Chunks.TryGetValue(indices, out var chunk))
                 {
-                    chunkData.Add(indices, ChunkDatum.Empty);
+                    chunkData[indices] = ChunkDatum.Empty;
                     continue;
                 }
 
@@ -508,7 +509,7 @@ public abstract partial class SharedMapSystem
                 continue;
 
             DebugTools.Assert(keys.Add(index), "Duplicate chunk");
-            DebugTools.Assert(chunk.TileData.Any(x => !x.IsEmpty), "Empty non-deleted chunk");
+            DebugTools.Assert(chunk.HasAnyTiles(), "Empty non-deleted chunk");
         }
 #endif
     }
@@ -544,7 +545,7 @@ public abstract partial class SharedMapSystem
 #if DEBUG
         foreach (var chunk in chunkData.Values)
         {
-            DebugTools.Assert(chunk.TileData!.Any(x => !x.IsEmpty));
+            DebugTools.Assert(chunk.HasAnyTiles());
         }
 #endif
     }

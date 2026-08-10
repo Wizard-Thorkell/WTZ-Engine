@@ -63,7 +63,15 @@ public abstract partial class SharedMapSystem
             return;
         }
 
-        var chunk = GetOrAddChunk(uid, grid, GetChunkIndices(gridIndices, grid.ChunkSize));
+        var chunkIndex = GetChunkIndices(gridIndices, grid.ChunkSize);
+        if (!grid.Chunks.TryGetValue(chunkIndex, out var chunk))
+        {
+            if (tile.IsEmpty)
+                return;
+
+            chunk = GetOrAddChunk(uid, grid, chunkIndex);
+        }
+
         var chunkTile = chunk.GridTileToChunkTile(gridIndices);
 
         if (!chunk.TrySetTile((ushort) chunkTile.X, (ushort) chunkTile.Y, indices.Z, tile, out var oldTile, out _))
@@ -73,12 +81,11 @@ public abstract partial class SharedMapSystem
         grid.LastTileModifiedTick = _timing.CurTick;
         Dirty(uid, grid);
 
-        if (chunk.IsCompletelyEmpty)
-            grid.Chunks.Remove(chunk.Indices);
-
-        var chunkIndex = GetChunkIndices(gridIndices, grid.ChunkSize);
         var ev = new ZLevelTileChangedEvent((uid, grid), [new ZLevelTileChangedEntry(tile, oldTile, chunkIndex, indices)]);
         RaiseLocalEvent(uid, ref ev, true);
+
+        if (chunk.IsCompletelyEmpty)
+            RemoveChunk(uid, grid, chunk.Indices);
     }
 
     public int ClearZLevelTileRegion(EntityUid uid, MapGridComponent grid, Vector2i min, Vector2i max, int z)

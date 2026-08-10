@@ -28,6 +28,32 @@ namespace Robust.Shared.GameStates
             return TileData == null;
         }
 
+        public bool HasAnyTiles()
+        {
+            if (TileData != null)
+            {
+                foreach (var tile in TileData)
+                {
+                    if (!tile.IsEmpty)
+                        return true;
+                }
+            }
+
+            if (ZLevelTileData == null)
+                return false;
+
+            foreach (var layer in ZLevelTileData.Values)
+            {
+                foreach (var tile in layer)
+                {
+                    if (!tile.IsEmpty)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private ChunkDatum(Tile[] tileData, Dictionary<int, Tile[]>? zLevelTileData, HashSet<string> fixtures, Box2i cachedBounds)
         {
             TileData = tileData;

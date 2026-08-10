@@ -348,6 +348,7 @@ namespace Robust.Shared.Map
                 _layerFilledTiles[z] = filledTiles;
             }
 
+            ValidateZLevelLayers();
             return true;
         }
 
@@ -446,8 +447,12 @@ namespace Robust.Shared.Map
                 return;
             }
 
+            DebugTools.Assert(_layerFilledTiles != null);
+            DebugTools.Assert(_layerTiles.Count == _layerFilledTiles.Count);
+
             foreach (var (z, tiles) in _layerTiles)
             {
+                DebugTools.Assert(z != 0);
                 var totalFilled = 0;
                 foreach (var tile in tiles)
                 {
@@ -455,8 +460,8 @@ namespace Robust.Shared.Map
                         totalFilled += 1;
                 }
 
-                DebugTools.Assert(_layerFilledTiles != null);
                 DebugTools.Assert(_layerFilledTiles.TryGetValue(z, out var filledTiles));
+                DebugTools.Assert(filledTiles > 0);
                 DebugTools.Assert(totalFilled == filledTiles);
             }
         }
