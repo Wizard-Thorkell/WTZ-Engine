@@ -200,6 +200,29 @@ internal sealed class ZLevelMapTests : RobustUnitTest
     }
 
     [Test]
+    public void NonEmptyZLevelTileEnumerationOnlyReturnsAllocatedTiles()
+    {
+        var grid = _mapMan.CreateGridEntity(_mapId);
+        var baseTile = new ZLevelTileIndices(-17, 34, 0);
+        var upperTile = new ZLevelTileIndices(33, -18, 1024);
+        var lowerTile = new ZLevelTileIndices(34, -18, -1024);
+
+        _mapSys.SetTile(grid.Owner, grid.Comp, new Vector2i(baseTile.X, baseTile.Y), new Tile(1));
+        _mapSys.SetZLevelTile(grid.Owner, grid.Comp, upperTile, new Tile(2));
+        _mapSys.SetZLevelTile(grid.Owner, grid.Comp, lowerTile, new Tile(3));
+
+        var tiles = _mapSys.GetAllNonEmptyZLevelTiles(grid.Owner, grid.Comp).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(tiles, Has.Length.EqualTo(3));
+            Assert.That(tiles, Has.Some.Matches<ZLevelTileRef>(tile => tile.GridIndices == baseTile && tile.Tile.TypeId == 1));
+            Assert.That(tiles, Has.Some.Matches<ZLevelTileRef>(tile => tile.GridIndices == upperTile && tile.Tile.TypeId == 2));
+            Assert.That(tiles, Has.Some.Matches<ZLevelTileRef>(tile => tile.GridIndices == lowerTile && tile.Tile.TypeId == 3));
+        });
+    }
+
+    [Test]
     public void ZLevelLegacy2DQueriesRemainOnBaseLayer()
     {
         var baseTile = new Vector2i(4, 4);

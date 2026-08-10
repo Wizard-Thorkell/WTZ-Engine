@@ -430,6 +430,35 @@ public abstract partial class SharedMapSystem
         return layers;
     }
 
+    /// <summary>
+    /// Enumerates every non-empty tile in the grid's allocated Z-level layers.
+    /// Work is bounded by existing chunks and layers rather than the grid's full 3D bounds.
+    /// </summary>
+    public IEnumerable<ZLevelTileRef> GetAllNonEmptyZLevelTiles(EntityUid uid, MapGridComponent grid)
+    {
+        foreach (var chunk in GetMapChunks(uid, grid).Values)
+        {
+            foreach (var z in chunk.GetExistingLayers())
+            {
+                for (ushort x = 0; x < chunk.ChunkSize; x++)
+                {
+                    for (ushort y = 0; y < chunk.ChunkSize; y++)
+                    {
+                        var tile = chunk.GetTile(x, y, z);
+                        if (tile.IsEmpty)
+                            continue;
+
+                        var gridIndices = chunk.ChunkTileToGridTile(new Vector2i(x, y));
+                        yield return new ZLevelTileRef(
+                            uid,
+                            new ZLevelTileIndices(gridIndices.X, gridIndices.Y, z),
+                            tile);
+                    }
+                }
+            }
+        }
+    }
+
     private bool TryGetChunkAndOffset(
         EntityUid uid,
         MapGridComponent grid,
