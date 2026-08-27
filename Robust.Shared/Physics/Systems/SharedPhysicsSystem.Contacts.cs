@@ -394,6 +394,22 @@ public abstract partial class SharedPhysicsSystem
         _contactPool.Return(contact);
     }
 
+    /// <summary>
+    /// Finds and dispatches contacts created by body movement since the last
+    /// broadphase contact pass.
+    /// </summary>
+    /// <remarks>
+    /// This is intended for systems that deliberately bound a body's movement
+    /// inside a physics substep and must process that completed path before
+    /// changing its collision context. Calls are global and should be batched.
+    /// </remarks>
+    [PublicAPI]
+    public void FlushPendingContacts()
+    {
+        _broadphase.FindNewContacts();
+        CollideContacts();
+    }
+
     internal void CollideContacts()
     {
         // Due to the fact some contacts may be removed (and we need to update this array as we iterate).

@@ -159,6 +159,44 @@ internal sealed class Collision_Test
     }
 
     [Test]
+    public void FlushPendingContactsProcessesMovedBodies()
+    {
+        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var entManager = sim.Resolve<IEntityManager>();
+        var fixtures = entManager.System<FixtureSystem>();
+        var physics = entManager.System<SharedPhysicsSystem>();
+        var transform = entManager.System<SharedTransformSystem>();
+        var map = sim.CreateMap();
+
+        var ent1 = entManager.SpawnAttachedTo(null, new EntityCoordinates(map.Uid, Vector2.Zero));
+        var ent2 = entManager.SpawnAttachedTo(null, new EntityCoordinates(map.Uid, new Vector2(4f, 0f)));
+        var body1 = entManager.AddComponent<PhysicsComponent>(ent1);
+        var body2 = entManager.AddComponent<PhysicsComponent>(ent2);
+        physics.SetBodyType(ent1, BodyType.Dynamic, body: body1);
+        physics.SetBodyType(ent2, BodyType.Dynamic, body: body2);
+        fixtures.CreateFixture(ent1, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: body1);
+        fixtures.CreateFixture(ent2, "fix1", new Fixture(new PhysShapeCircle(0.5f), 1, 1, true), body: body2);
+
+        physics.WakeBody(ent1, body: body1);
+        physics.WakeBody(ent2, body: body2);
+        physics.Update(0.01f);
+        Assert.That(body1.ContactCount, Is.Zero);
+        Assert.That(body2.ContactCount, Is.Zero);
+
+        transform.SetLocalPosition(ent2, Vector2.Zero);
+        Assert.That(body1.ContactCount, Is.Zero);
+        Assert.That(body2.ContactCount, Is.Zero);
+
+        physics.FlushPendingContacts();
+        Assert.That(body1.ContactCount, Is.EqualTo(1));
+        Assert.That(body2.ContactCount, Is.EqualTo(1));
+
+        physics.FlushPendingContacts();
+        Assert.That(body1.ContactCount, Is.EqualTo(1));
+        Assert.That(body2.ContactCount, Is.EqualTo(1));
+    }
+
+    [Test]
     public void CrossZLevelContactsAreIgnored()
     {
         var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
