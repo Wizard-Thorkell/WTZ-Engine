@@ -28,6 +28,19 @@ public sealed partial class MapLoaderSystem
         HashSet<EntityUid> entities,
         SerializationOptions? options = null)
     {
+        return SerializeEntitiesRecursive(entities, out _, options);
+    }
+
+    /// <summary>
+    /// Recursively serializes entities and returns the YAML identifier assigned
+    /// to each serialized entity. This is useful for in-memory duplication where
+    /// callers need to correlate loaded entities with their sources.
+    /// </summary>
+    public (MappingDataNode Node, FileCategory Category) SerializeEntitiesRecursive(
+        HashSet<EntityUid> entities,
+        out IReadOnlyDictionary<EntityUid, int> yamlIds,
+        SerializationOptions? options = null)
+    {
         _stopwatch.Restart();
         if (!entities.All(Exists))
             throw new Exception($"Cannot serialize deleted entities");
@@ -51,6 +64,7 @@ public sealed partial class MapLoaderSystem
         serializer.SerializeEntityRecursive(entities);
         var data = serializer.Write();
         var cat = serializer.GetCategory();
+        yamlIds = serializer.YamlUidMap.ToDictionary();
 
         var ev2 = new AfterSerializationEvent(entities, data, cat);
         RaiseLocalEvent(ev2);
