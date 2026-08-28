@@ -218,6 +218,26 @@ namespace Robust.Client.Graphics.Clyde
             return CreateRenderTarget(size, new RenderTargetFormatParameters(RenderTargetColorFormat.R8, hasDepthStencil: depthStencil), null, name: name);
         }
 
+        public IRenderTexture CreateLightShadowMap(int lightCapacity, string? name = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(lightCapacity, 1);
+            return CreateRenderTarget(
+                (LightShadowMap.Width, lightCapacity),
+                new RenderTargetFormatParameters(RenderTargetColorFormat.RG32F, true),
+                new TextureSampleParameters { WrapMode = TextureWrapMode.Repeat },
+                name);
+        }
+
+        public LightShadowMapRenderStats RenderLightShadowMap(
+            IRenderTexture shadowMap,
+            IClydeViewport viewport,
+            MapId mapId,
+            ReadOnlySpan<LightShadowMapRequest> requests)
+        {
+            LightShadowMapContract.Validate(shadowMap.Size, requests);
+            return default;
+        }
+
         public IRenderTexture CreateRenderTarget(Vector2i size, RenderTargetFormatParameters format,
             TextureSampleParameters? sampleParameters = null, string? name = null)
         {

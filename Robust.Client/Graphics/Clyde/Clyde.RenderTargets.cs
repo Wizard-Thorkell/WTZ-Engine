@@ -44,6 +44,17 @@ namespace Robust.Client.Graphics.Clyde
                 name: name);
         }
 
+        public IRenderTexture CreateLightShadowMap(int lightCapacity, string? name = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(lightCapacity, 1);
+            var format = _hasGLFloatFramebuffers ? RTCF.RG32F : RTCF.Rgba8;
+            return CreateRenderTarget(
+                (LightShadowMap.Width, lightCapacity),
+                new RenderTargetFormatParameters(format, true),
+                new TextureSampleParameters { WrapMode = Robust.Shared.Graphics.TextureWrapMode.Repeat },
+                name);
+        }
+
         IRenderTexture IClyde.CreateRenderTarget(Vector2i size, RenderTargetFormatParameters format,
             TextureSampleParameters? sampleParameters, string? name)
         {

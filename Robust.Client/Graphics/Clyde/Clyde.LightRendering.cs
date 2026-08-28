@@ -29,7 +29,7 @@ namespace Robust.Client.Graphics.Clyde
     internal partial class Clyde
     {
         // Horizontal width, in pixels, of the shadow maps used to render regular lights.
-        private const int ShadowMapSize = 512;
+        private const int ShadowMapSize = LightShadowMap.Width;
 
         // Horizontal width, in pixels, of the shadow maps used to render FOV.
         // I figured this was more accuracy sensitive than lights so resolution is significantly higher.
@@ -96,6 +96,8 @@ namespace Robust.Client.Graphics.Clyde
 
         private LightCapacityComparer _lightCap = new();
         private ShadowCapacityComparer _shadowCap = new ShadowCapacityComparer();
+
+        private OcclusionGeometryState? _occlusionGeometryState;
 
         private float _maxLightRadius;
 
@@ -960,6 +962,8 @@ namespace Robust.Client.Graphics.Clyde
             using var _ = _prof.Group("UpdateOcclusionGeometry");
             using var _p = DebugGroup(nameof(UpdateOcclusionGeometry));
 
+            _occlusionGeometryState = new OcclusionGeometryState(map, expandedBounds, eyeTransform, worldZ);
+
             // This method generates two sets of occlusion geometry:
             // 3D geometry used during depth projection.
             // 2D mask geometry used to apply wall bleed.
@@ -1181,6 +1185,12 @@ namespace Robust.Client.Graphics.Clyde
             _debugStats.Occluders += ami / 4;
             _debugStats.ZLevelOccludersRejected += rejectedByZ;
         }
+
+        private readonly record struct OcclusionGeometryState(
+            MapId MapId,
+            Box2 WorldBounds,
+            Matrix3x2 EyeTransform,
+            int WorldZ);
 
         private void RegenLightRts(Viewport viewport)
         {

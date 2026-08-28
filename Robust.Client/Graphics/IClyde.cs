@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Graphics;
+using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -99,6 +100,21 @@ namespace Robust.Client.Graphics
         void BlurRenderTarget(IClydeViewport viewport, IRenderTarget target, IRenderTarget blurBuffer, IEye eye, float multiplier);
 
         IRenderTexture CreateLightRenderTarget(Vector2i size, string? name = null, bool depthStencil = true);
+
+        /// <summary>
+        /// Creates a depth-backed polar shadow atlas for point lights submitted by an external renderer.
+        /// </summary>
+        IRenderTexture CreateLightShadowMap(int lightCapacity, string? name = null);
+
+        /// <summary>
+        /// Renders source-specific point-light shadows into a caller-owned atlas. Request order determines
+        /// atlas row order; grouping adjacent requests by world Z avoids redundant occluder uploads.
+        /// </summary>
+        LightShadowMapRenderStats RenderLightShadowMap(
+            IRenderTexture shadowMap,
+            IClydeViewport viewport,
+            MapId mapId,
+            ReadOnlySpan<LightShadowMapRequest> requests);
 
         IRenderTexture CreateRenderTarget(Vector2i size, RenderTargetFormatParameters format,
             TextureSampleParameters? sampleParameters = null, string? name = null);
