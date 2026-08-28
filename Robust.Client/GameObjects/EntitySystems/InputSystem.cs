@@ -92,7 +92,8 @@ namespace Robust.Client.GameObjects
                     GetCoordinates(fullInput.Coordinates),
                     fullInput.ScreenCoordinates,
                     fullInput.State,
-                    GetEntity(fullInput.Uid)),
+                    GetEntity(fullInput.Uid),
+                    fullInput.CoordinateLayer),
 
                 _ => throw new ArgumentOutOfRangeException()
             };
@@ -107,8 +108,8 @@ namespace Robust.Client.GameObjects
                     clientMsg.State,
                     GetNetCoordinates(client.Coordinates),
                     clientMsg.ScreenCoordinates,
-                    GetNetEntity(clientMsg.Uid)
-                    ),
+                    GetNetEntity(clientMsg.Uid),
+                    client.CoordinateLayer),
 
                 _ => throw new ArgumentOutOfRangeException()
             };

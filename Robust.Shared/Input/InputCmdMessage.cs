@@ -170,6 +170,12 @@ namespace Robust.Shared.Input
         /// </summary>
         public EntityUid Uid { get; init; }
 
+        /// <summary>
+        ///     Optional gameplay-defined layer associated with <see cref="Coordinates"/>.
+        ///     The engine transports this value without interpreting it.
+        /// </summary>
+        public int? CoordinateLayer { get; init; }
+
         public ClientFullInputCmdMessage(GameTick tick, ushort subTick, KeyFunctionId inputFunctionId) : base(tick, subTick, inputFunctionId)
         {
         }
@@ -181,7 +187,8 @@ namespace Robust.Shared.Input
             EntityCoordinates coordinates,
             ScreenCoordinates screenCoordinates,
             BoundKeyState state,
-            EntityUid uid) : base(tick,
+            EntityUid uid,
+            int? coordinateLayer = null) : base(tick,
             subTick,
             inputFunctionId)
         {
@@ -189,6 +196,7 @@ namespace Robust.Shared.Input
             ScreenCoordinates = screenCoordinates;
             State = state;
             Uid = uid;
+            CoordinateLayer = coordinateLayer;
         }
     }
 
@@ -200,6 +208,7 @@ namespace Robust.Shared.Input
         KeyFunctionId InputFunctionId { get; }
         ushort SubTick { get; }
         uint InputSequence { get; set; }
+        int? CoordinateLayer { get; }
     }
 
     /// <summary>
@@ -229,6 +238,12 @@ namespace Robust.Shared.Input
         public NetEntity Uid { get; init; }
 
         /// <summary>
+        ///     Optional gameplay-defined layer associated with <see cref="Coordinates"/>.
+        ///     The engine transports this value without interpreting it.
+        /// </summary>
+        public int? CoordinateLayer { get; }
+
+        /// <summary>
         ///     Creates an instance of <see cref="FullInputCmdMessage"/>.
         /// </summary>
         /// <param name="tick">Client tick this was created.</param>
@@ -237,8 +252,8 @@ namespace Robust.Shared.Input
         /// <param name="state">New state of the Input Function.</param>
         /// <param name="coordinates">Local Coordinates of the pointer when the command was created.</param>
         /// <param name="screenCoordinates"></param>
-        public FullInputCmdMessage(GameTick tick, ushort subTick, int inputSequence, KeyFunctionId inputFunctionId, BoundKeyState state, NetCoordinates coordinates, ScreenCoordinates screenCoordinates)
-            : this(tick, subTick, inputFunctionId, state, coordinates, screenCoordinates, NetEntity.Invalid) { }
+        public FullInputCmdMessage(GameTick tick, ushort subTick, int inputSequence, KeyFunctionId inputFunctionId, BoundKeyState state, NetCoordinates coordinates, ScreenCoordinates screenCoordinates, int? coordinateLayer = null)
+            : this(tick, subTick, inputFunctionId, state, coordinates, screenCoordinates, NetEntity.Invalid, coordinateLayer) { }
 
         /// <summary>
         ///     Creates an instance of <see cref="FullInputCmdMessage"/> with an optional Entity reference.
@@ -249,13 +264,14 @@ namespace Robust.Shared.Input
         /// <param name="coordinates">Local Coordinates of the pointer when the command was created.</param>
         /// <param name="screenCoordinates"></param>
         /// <param name="uid">Entity that was under the pointer when the command was created.</param>
-        public FullInputCmdMessage(GameTick tick, ushort subTick, KeyFunctionId inputFunctionId, BoundKeyState state, NetCoordinates coordinates, ScreenCoordinates screenCoordinates, NetEntity uid)
+        public FullInputCmdMessage(GameTick tick, ushort subTick, KeyFunctionId inputFunctionId, BoundKeyState state, NetCoordinates coordinates, ScreenCoordinates screenCoordinates, NetEntity uid, int? coordinateLayer = null)
             : base(tick, subTick, inputFunctionId)
         {
             State = state;
             Coordinates = coordinates;
             ScreenCoordinates = screenCoordinates;
             Uid = uid;
+            CoordinateLayer = coordinateLayer;
         }
     }
 }

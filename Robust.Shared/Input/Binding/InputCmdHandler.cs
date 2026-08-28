@@ -142,6 +142,11 @@ namespace Robust.Shared.Input.Binding
             public readonly BoundKeyState State;
             public readonly IFullInputCmdMessage OriginalMessage;
 
+            /// <summary>
+            /// Optional gameplay-defined layer associated with <see cref="Coordinates"/>.
+            /// </summary>
+            public int? CoordinateLayer => OriginalMessage.CoordinateLayer;
+
             public PointerInputCmdArgs(ICommonSession? session, EntityCoordinates coordinates,
                 ScreenCoordinates screenCoordinates, EntityUid entityUid, BoundKeyState state,
                 IFullInputCmdMessage originalMessage)
