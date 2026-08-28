@@ -332,6 +332,40 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
         return state.trees;
     }
 
+    /// <summary>
+    /// Appends trees intersecting <paramref name="worldAABB"/> to a caller-owned buffer.
+    /// This overload is intended for hot paths that reuse the same list between queries.
+    /// </summary>
+    public void GetIntersectingTrees(
+        MapId mapId,
+        Box2 worldAABB,
+        List<(EntityUid Uid, TTreeComp Comp)> results,
+        bool approx = IMapManager.Approximate)
+    {
+        if (!CheckEnabled())
+            return;
+
+        UpdateTreePositions();
+
+        if (mapId == MapId.Nullspace)
+            return;
+
+        (IEntityManager EntityManager, List<(EntityUid Uid, TTreeComp Comp)> Results) state =
+            (EntityManager, results);
+        _mapManager.FindGridsIntersecting(mapId, worldAABB, ref state,
+            static (EntityUid uid, MapGridComponent grid,
+                ref (IEntityManager EntityManager, List<(EntityUid Uid, TTreeComp Comp)> Results) tuple) =>
+            {
+                if (tuple.EntityManager.TryGetComponent<TTreeComp>(uid, out var treeComp))
+                    tuple.Results.Add((uid, treeComp));
+
+                return true;
+            }, approx: approx, includeMap: false);
+
+        if (_mapSystem.TryGetMap(mapId, out var mapUid) && TryComp(mapUid, out TTreeComp? mapTreeComp))
+            state.Results.Add((mapUid.Value, mapTreeComp));
+    }
+
     #region HashSet
 
     public HashSet<ComponentTreeEntry<TComp>> QueryAabb(MapId mapId, Box2 worldBounds, bool approx = true)
@@ -453,6 +487,46 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
 
         foreach (var (tree, treeComp) in GetIntersectingTrees(mapId, worldBounds))
         {
+            var bounds = XformSystem.GetInvWorldMatrix(tree).TransformBox(worldBounds);
+            treeComp.Tree.QueryAabb(ref state, callback, bounds, approx);
+        }
+    }
+
+    /// <summary>
+    /// Queries component trees using a caller-owned tree buffer. Only entries appended by
+    /// this call are visited; callers may clear and reuse the buffer between queries.
+    /// </summary>
+    public void QueryAabb<TState>(
+        ref TState state,
+        DynamicTree<ComponentTreeEntry<TComp>>.QueryCallbackDelegate<TState> callback,
+        MapId mapId,
+        Box2 worldBounds,
+        List<(EntityUid Uid, TTreeComp Comp)> treeBuffer,
+        bool approx = true)
+    {
+        QueryAabb(ref state, callback, mapId, new Box2Rotated(worldBounds, default, default), treeBuffer, approx);
+    }
+
+    /// <summary>
+    /// Queries component trees using a caller-owned tree buffer. Only entries appended by
+    /// this call are visited; callers may clear and reuse the buffer between queries.
+    /// </summary>
+    public void QueryAabb<TState>(
+        ref TState state,
+        DynamicTree<ComponentTreeEntry<TComp>>.QueryCallbackDelegate<TState> callback,
+        MapId mapId,
+        Box2Rotated worldBounds,
+        List<(EntityUid Uid, TTreeComp Comp)> treeBuffer,
+        bool approx = true)
+    {
+        if (!CheckEnabled())
+            return;
+
+        var firstTree = treeBuffer.Count;
+        GetIntersectingTrees(mapId, worldBounds.CalcBoundingBox(), treeBuffer, approx);
+        for (var i = firstTree; i < treeBuffer.Count; i++)
+        {
+            var (tree, treeComp) = treeBuffer[i];
             var bounds = XformSystem.GetInvWorldMatrix(tree).TransformBox(worldBounds);
             treeComp.Tree.QueryAabb(ref state, callback, bounds, approx);
         }
