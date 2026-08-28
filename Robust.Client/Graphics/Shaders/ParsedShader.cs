@@ -271,7 +271,9 @@ namespace Robust.Client.Graphics
         Mix,
         Add,
         Subtract,
-        Multiply
+        Multiply,
+        // Source alpha plus the existing destination, matching native point lights.
+        LightAdd
     }
 
     internal enum ShaderPreset : byte

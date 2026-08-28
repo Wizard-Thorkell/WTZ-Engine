@@ -103,11 +103,12 @@ namespace Robust.Client.Graphics
                     {
                         TokenWord t when t.Word == "mix" => ShaderBlendMode.Mix,
                         TokenWord t when t.Word == "add" => ShaderBlendMode.Add,
+                        TokenWord t when t.Word == "light_add" => ShaderBlendMode.LightAdd,
                         TokenWord t when t.Word == "subtract" => ShaderBlendMode.Subtract,
                         TokenWord t when t.Word == "multiply" => ShaderBlendMode.Multiply,
                         TokenWord t when t.Word == "none" => ShaderBlendMode.None,
                         TokenWord t when t.Word == "normal" => ShaderBlendMode.Normal,
-                        _ => throw new ShaderParseException("Expected 'mix', 'add', 'subtract', 'normal', 'none' or 'multiply'.")
+                        _ => throw new ShaderParseException("Expected 'mix', 'add', 'light_add', 'subtract', 'normal', 'none' or 'multiply'.")
                     };
 
                     token = _takeToken();

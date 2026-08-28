@@ -957,6 +957,9 @@ namespace Robust.Client.Graphics.Clyde
                     case ShaderBlendMode.Add:
                         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.DstAlpha);
                         break;
+                    case ShaderBlendMode.LightAdd:
+                        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
+                        break;
                     case ShaderBlendMode.Subtract:
                         GL.BlendFuncSeparate(BlendingFactorSrc.SrcAlpha, BlendingFactorDest.DstAlpha, BlendingFactorSrc.Zero, BlendingFactorDest.DstAlpha);
                         GL.BlendEquation(BlendEquationMode.FuncReverseSubtract);
