@@ -236,6 +236,7 @@ namespace Robust.Client.Graphics.Clyde
         public void RegisterGridEcsEvents()
         {
             _entityManager.EventBus.SubscribeEvent<TileChangedEvent>(EventSource.Local, this, _updateTileMapOnUpdate);
+            _entityManager.EventBus.SubscribeEvent<ZLevelTileChangedEvent>(EventSource.Local, this, _updateZLevelTileMapOnUpdate);
             _entityManager.EventBus.SubscribeEvent<GridStartupEvent>(EventSource.Local, this, _updateOnGridCreated);
             _entityManager.EventBus.SubscribeEvent<GridRemovalEvent>(EventSource.Local, this, _updateOnGridRemoved);
         }
@@ -243,6 +244,7 @@ namespace Robust.Client.Graphics.Clyde
         public void ShutdownGridEcsEvents()
         {
             _entityManager.EventBus.UnsubscribeEvent<TileChangedEvent>(EventSource.Local, this);
+            _entityManager.EventBus.UnsubscribeEvent<ZLevelTileChangedEvent>(EventSource.Local, this);
             _entityManager.EventBus.UnsubscribeEvent<GridStartupEvent>(EventSource.Local, this);
             _entityManager.EventBus.UnsubscribeEvent<GridRemovalEvent>(EventSource.Local, this);
         }

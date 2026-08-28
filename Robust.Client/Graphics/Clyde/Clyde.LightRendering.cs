@@ -352,12 +352,12 @@ namespace Robust.Client.Graphics.Clyde
             Box2 expandedBounds;
             using (_prof.Group("LightsToRender"))
             {
-                (count, expandedBounds) = GetLightsToRender(mapId, worldBounds, worldAABB);
+                (count, expandedBounds) = GetLightsToRender(mapId, worldBounds, worldAABB, eye.WorldZLevel);
             }
 
             eye.GetViewMatrixNoOffset(out var eyeTransform, eye.Scale);
 
-            UpdateOcclusionGeometry(mapId, expandedBounds, eyeTransform);
+            UpdateOcclusionGeometry(mapId, expandedBounds, eyeTransform, eye.WorldZLevel);
 
             DrawFov(viewport, eye);
 
@@ -572,17 +572,25 @@ namespace Robust.Client.Graphics.Clyde
             int count,
             int shadowCastingCount,
             EntityQuery<TransformComponent> xforms,
+            int worldZ,
+            int rejectedByZ,
             Box2 worldAABB) state,
             in ComponentTreeEntry<PointLightComponent> value)
         {
             ref var count = ref state.count;
             ref var shadowCount = ref state.shadowCastingCount;
 
-            // If there are too many lights, exit the query
+            var (light, transform) = value;
+            if (state.clyde._transformSystem.GetWorldZLevel((value.Uid, transform, null)) != state.worldZ)
+            {
+                state.rejectedByZ++;
+                return true;
+            }
+
+            // If there are too many lights on this layer, exit the query.
             if (count >= state.clyde._maxLights)
                 return false;
 
-            var (light, transform) = value;
             var (lightPos, rot) = state.clyde._transformSystem.GetWorldPositionRotation(transform, state.xforms);
             lightPos += rot.RotateVec(light.Offset);
             var circle = new Circle(lightPos, light.Radius);
@@ -627,11 +635,12 @@ namespace Robust.Client.Graphics.Clyde
         private (int count, Box2 expandedBounds) GetLightsToRender(
             MapId map,
             in Box2Rotated worldBounds,
-            in Box2 worldAABB)
+            in Box2 worldAABB,
+            int worldZ)
         {
             // Use worldbounds for this one as we only care if the light intersects our actual bounds
             var xforms = _entityManager.GetEntityQuery<TransformComponent>();
-            var state = (this, count: 0, shadowCastingCount: 0, xforms, worldAABB);
+            var state = (this, count: 0, shadowCastingCount: 0, xforms, worldZ, rejectedByZ: 0, worldAABB);
             var lightAabb = worldAABB.Enlarged(_maxLightRadius);
 
             foreach (var (uid, comp) in _lightTreeSystem.GetIntersectingTrees(map, lightAabb))
@@ -671,6 +680,7 @@ namespace Robust.Client.Graphics.Clyde
 
             _debugStats.TotalLights += state.count;
             _debugStats.ShadowLights += Math.Min(state.shadowCastingCount, _maxShadowcastingLights);
+            _debugStats.ZLevelLightsRejected += state.rejectedByZ;
 
             return (state.count, expandedBounds);
         }
@@ -945,7 +955,7 @@ namespace Robust.Client.Graphics.Clyde
             _drawQuad(Vector2.Zero, Vector2.One, Matrix3x2.Identity, fovShader);
         }
 
-        private void UpdateOcclusionGeometry(MapId map, Box2 expandedBounds, Matrix3x2 eyeTransform)
+        private void UpdateOcclusionGeometry(MapId map, Box2 expandedBounds, Matrix3x2 eyeTransform, int worldZ)
         {
             using var _ = _prof.Group("UpdateOcclusionGeometry");
             using var _p = DebugGroup(nameof(UpdateOcclusionGeometry));
@@ -970,6 +980,7 @@ namespace Robust.Client.Graphics.Clyde
             var ii = 0;
             var imi = 0;
             var amiMax = _maxOccluders * 4;
+            var rejectedByZ = 0;
 
             var xforms = _entityManager.GetEntityQuery<TransformComponent>();
 
@@ -987,6 +998,12 @@ namespace Robust.Client.Graphics.Clyde
                         var (occluder, transform) = entry;
                         if (!occluder.Enabled)
                         {
+                            return true;
+                        }
+
+                        if (_transformSystem.GetWorldZLevel((entry.Uid, transform, null)) != worldZ)
+                        {
+                            rejectedByZ++;
                             return true;
                         }
 
@@ -1162,6 +1179,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             _debugStats.Occluders += ami / 4;
+            _debugStats.ZLevelOccludersRejected += rejectedByZ;
         }
 
         private void RegenLightRts(Viewport viewport)

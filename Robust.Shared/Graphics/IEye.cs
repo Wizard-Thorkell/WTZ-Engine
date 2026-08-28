@@ -29,6 +29,11 @@ namespace Robust.Shared.Graphics
         MapCoordinates Position { get; }
 
         /// <summary>
+        /// World-space Z layer represented by this eye.
+        /// </summary>
+        int WorldZLevel { get; }
+
+        /// <summary>
         /// Translation offset from <see cref="Position"/>. Does not influence the center of FOV.
         /// </summary>
         Vector2 Offset { get; set; }

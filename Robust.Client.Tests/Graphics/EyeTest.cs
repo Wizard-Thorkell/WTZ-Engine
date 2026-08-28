@@ -32,5 +32,16 @@ namespace Robust.Client.Tests.Graphics
 
             Assert.That(eye.DrawFov, Is.True);
         }
+
+        [Test]
+        public void WorldZLevel_DefaultsToZeroAndCanBeSet()
+        {
+            var eye = new Eye();
+
+            Assert.That(eye.WorldZLevel, Is.Zero);
+
+            eye.WorldZLevel = 7;
+            Assert.That(eye.WorldZLevel, Is.EqualTo(7));
+        }
     }
 }

@@ -74,7 +74,7 @@ public abstract partial class SharedMapSystem
 
         var chunkTile = chunk.GridTileToChunkTile(gridIndices);
 
-        if (!chunk.TrySetTile((ushort) chunkTile.X, (ushort) chunkTile.Y, indices.Z, tile, out var oldTile, out _))
+        if (!chunk.TrySetTile((ushort) chunkTile.X, (ushort) chunkTile.Y, indices.Z, tile, out var oldTile, out var shapeChanged))
             return;
 
         chunk.LastTileModifiedTick = _timing.CurTick;
@@ -83,6 +83,12 @@ public abstract partial class SharedMapSystem
 
         var ev = new ZLevelTileChangedEvent((uid, grid), [new ZLevelTileChangedEntry(tile, oldTile, chunkIndex, indices)]);
         RaiseLocalEvent(uid, ref ev, true);
+
+        if (shapeChanged)
+        {
+            RegenerateAabb(grid);
+            OnGridBoundsChange(uid, grid);
+        }
 
         if (chunk.IsCompletelyEmpty)
             RemoveChunk(uid, grid, chunk.Indices);

@@ -27,6 +27,11 @@ namespace Robust.Client.Graphics
 
         bool IsFocused { get; }
 
+        /// <summary>
+        /// Z-level rendering counters captured during the latest frame.
+        /// </summary>
+        ZLevelRenderStats ZLevelRenderStats { get; }
+
         IEnumerable<IClydeWindow> AllWindows { get; }
 
         /// <summary>

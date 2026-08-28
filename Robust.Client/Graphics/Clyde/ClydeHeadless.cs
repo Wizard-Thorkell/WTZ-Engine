@@ -56,6 +56,7 @@ namespace Robust.Client.Graphics.Clyde
         public ScreenCoordinates MouseScreenPosition => default;
         public IClydeDebugInfo DebugInfo { get; } = new DummyDebugInfo();
         public IClydeDebugStats DebugStats { get; } = new DummyDebugStats();
+        public ZLevelRenderStats ZLevelRenderStats => default;
 
         public event Action<TextEnteredEventArgs>? TextEntered { add { } remove { } }
         public event Action<TextEditingEventArgs>? TextEditing { add { } remove { } }

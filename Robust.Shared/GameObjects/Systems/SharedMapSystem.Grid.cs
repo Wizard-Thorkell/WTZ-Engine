@@ -743,7 +743,7 @@ public abstract partial class SharedMapSystem
 
         foreach (var chunk in grid.Chunks.Values)
         {
-            var chunkBounds = chunk.CachedBounds;
+            var chunkBounds = chunk.CombinedBounds;
 
             if (chunkBounds.Size.Equals(Vector2i.Zero))
                 continue;

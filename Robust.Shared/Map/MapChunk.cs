@@ -41,7 +41,16 @@ namespace Robust.Shared.Map
         [ViewVariables]
         internal int FilledTiles { get; set; }
 
+        [ViewVariables]
+        internal Box2i CachedZLevelBounds { get; private set; }
+
         public bool IsCompletelyEmpty => FilledTiles == 0 && (_layerFilledTiles == null || _layerFilledTiles.Count == 0);
+
+        public Box2i CombinedBounds => CachedBounds.IsEmpty()
+            ? CachedZLevelBounds
+            : CachedZLevelBounds.IsEmpty()
+                ? CachedBounds
+                : CachedBounds.Union(CachedZLevelBounds);
 
         /// <summary>
         /// Chunk-local AABB of this chunk.
@@ -143,6 +152,16 @@ namespace Robust.Shared.Map
         public Tile GetTile(Vector2i indices, int z)
         {
             return GetTile((ushort) indices.X, (ushort) indices.Y, z);
+        }
+
+        public int GetFilledTiles(int z)
+        {
+            if (z == 0)
+                return FilledTiles;
+
+            return _layerFilledTiles != null && _layerFilledTiles.TryGetValue(z, out var count)
+                ? count
+                : 0;
         }
 
         /// <summary>
@@ -299,12 +318,11 @@ namespace Robust.Shared.Map
             if (yIndex >= Tiles.Length)
                 throw new ArgumentOutOfRangeException(nameof(yIndex), "Tile indices out of bounds.");
 
-            shapeChanged = false;
-
             Tile[,]? tiles = null;
             if ((_layerTiles == null || !_layerTiles.TryGetValue(z, out tiles)) && tile.IsEmpty)
             {
                 oldTile = Tile.Empty;
+                shapeChanged = false;
                 return false;
             }
 
@@ -313,8 +331,11 @@ namespace Robust.Shared.Map
             if (tileRef == tile)
             {
                 oldTile = default;
+                shapeChanged = false;
                 return false;
             }
+
+            shapeChanged = tileRef.IsEmpty != tile.IsEmpty;
 
             _layerFilledTiles ??= new Dictionary<int, int>();
             _layerFilledTiles.TryGetValue(z, out var filledTiles);
@@ -347,6 +368,9 @@ namespace Robust.Shared.Map
             {
                 _layerFilledTiles[z] = filledTiles;
             }
+
+            if (shapeChanged)
+                UpdateZLevelBounds(xIndex, yIndex, tile.IsEmpty);
 
             ValidateZLevelLayers();
             return true;
@@ -424,6 +448,68 @@ namespace Robust.Shared.Map
             tiles = new Tile[ChunkSize, ChunkSize];
             _layerTiles[z] = tiles;
             return tiles;
+        }
+
+        private void RecalculateZLevelBounds()
+        {
+            if (_layerTiles == null)
+            {
+                CachedZLevelBounds = Box2i.Empty;
+                return;
+            }
+
+            var minX = (int) ChunkSize;
+            var minY = (int) ChunkSize;
+            var maxX = -1;
+            var maxY = -1;
+
+            foreach (var tiles in _layerTiles.Values)
+            {
+                for (var x = 0; x < ChunkSize; x++)
+                {
+                    for (var y = 0; y < ChunkSize; y++)
+                    {
+                        if (tiles[x, y].IsEmpty)
+                            continue;
+
+                        minX = Math.Min(minX, x);
+                        minY = Math.Min(minY, y);
+                        maxX = Math.Max(maxX, x);
+                        maxY = Math.Max(maxY, y);
+                    }
+                }
+            }
+
+            CachedZLevelBounds = maxX < 0
+                ? Box2i.Empty
+                : new Box2i(minX, minY, maxX + 1, maxY + 1);
+        }
+
+        private void UpdateZLevelBounds(ushort xIndex, ushort yIndex, bool removed)
+        {
+            if (!removed)
+            {
+                var tileBounds = new Box2i(xIndex, yIndex, xIndex + 1, yIndex + 1);
+                CachedZLevelBounds = CachedZLevelBounds.IsEmpty()
+                    ? tileBounds
+                    : CachedZLevelBounds.Union(tileBounds);
+                return;
+            }
+
+            if (_layerTiles != null)
+            {
+                foreach (var tiles in _layerTiles.Values)
+                {
+                    if (!tiles[xIndex, yIndex].IsEmpty)
+                        return;
+                }
+            }
+
+            if (xIndex == CachedZLevelBounds.Left || xIndex + 1 == CachedZLevelBounds.Right ||
+                yIndex == CachedZLevelBounds.Bottom || yIndex + 1 == CachedZLevelBounds.Top)
+            {
+                RecalculateZLevelBounds();
+            }
         }
 
         [Conditional("DEBUG")]

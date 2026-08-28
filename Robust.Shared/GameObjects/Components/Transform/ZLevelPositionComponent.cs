@@ -10,7 +10,7 @@ namespace Robust.Shared.GameObjects;
 /// ZLevel experimental additive vertical state for an entity.
 /// XY and hierarchy remain owned by <see cref="TransformComponent"/>.
 /// </summary>
-[RegisterComponent, NetworkedComponent, AutoGenerateComponentState]
+[RegisterComponent, NetworkedComponent, AutoGenerateComponentState(raiseAfterAutoHandleState: true)]
 public sealed partial class ZLevelPositionComponent : Component
 {
     /// <summary>
@@ -26,3 +26,9 @@ public sealed partial class ZLevelPositionComponent : Component
     [DataField, AutoNetworkedField]
     public float LocalZOffset;
 }
+
+/// <summary>
+/// Raised after an entity's effective discrete Z-level changes.
+/// </summary>
+[ByRefEvent]
+public readonly record struct ZLevelPositionChangedEvent(int OldZLevel, int NewZLevel);

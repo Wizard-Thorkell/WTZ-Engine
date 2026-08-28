@@ -22,6 +22,7 @@ internal sealed class ClientOccluderSystem : OccluderSystem
 {
     private readonly HashSet<EntityUid> _dirtyEntities = new();
     [Dependency] private readonly SharedMapSystem _mapSystem = default!;
+    [Dependency] private readonly SharedTransformSystem _transform = default!;
 
     /// <inheritdoc />
     public override void Initialize()
@@ -30,6 +31,8 @@ internal sealed class ClientOccluderSystem : OccluderSystem
 
         SubscribeLocalEvent<OccluderComponent, AnchorStateChangedEvent>(OnAnchorChanged);
         SubscribeLocalEvent<OccluderComponent, ComponentShutdown>(OnShutdown);
+        SubscribeLocalEvent<OccluderComponent, ZLevelPositionChangedEvent>(OnZLevelChanged);
+        SubscribeLocalEvent<ZLevelPositionComponent, AfterAutoHandleStateEvent>(OnZLevelStateHandled);
     }
 
     public override void SetEnabled(EntityUid uid, bool enabled, OccluderComponent? comp = null, MetaDataComponent? meta = null)
@@ -89,6 +92,17 @@ internal sealed class ClientOccluderSystem : OccluderSystem
     private void OnAnchorChanged(EntityUid uid, OccluderComponent comp, ref AnchorStateChangedEvent args)
     {
         AnchorStateChanged(uid, comp, args.Transform);
+    }
+
+    private void OnZLevelChanged(Entity<OccluderComponent> entity, ref ZLevelPositionChangedEvent args)
+    {
+        QueueOccludedDirectionUpdate(entity.Owner, entity.Comp);
+    }
+
+    private void OnZLevelStateHandled(Entity<ZLevelPositionComponent> entity, ref AfterAutoHandleStateEvent args)
+    {
+        if (TryComp<OccluderComponent>(entity.Owner, out var occluder))
+            QueueOccludedDirectionUpdate(entity.Owner, occluder);
     }
 
     private void QueueOccludedDirectionUpdate(EntityUid sender, OccluderComponent occluder, TransformComponent? xform = null)
@@ -170,6 +184,7 @@ internal sealed class ClientOccluderSystem : OccluderSystem
         }
 
         var tile = _mapSystem.TileIndicesFor(xform.GridUid.Value, grid, xform.Coordinates);
+        var worldZ = _transform.GetWorldZLevel((uid, xform, null));
 
         // TODO: Sub to parent changes instead or something.
         // DebugTools.Assert(occluder.LastPosition == null
@@ -178,22 +193,23 @@ internal sealed class ClientOccluderSystem : OccluderSystem
 
         // dir starts at the relative effective south direction;
         var dir = xform.LocalRotation.GetCardinalDir();
-        CheckDir(dir, OccluderDir.South, tile, occluder, xform.GridUid.Value, grid, occluders, xforms);
+        CheckDir(dir, OccluderDir.South, tile, worldZ, occluder, xform.GridUid.Value, grid, occluders, xforms);
 
         dir = dir.GetClockwise90Degrees();
-        CheckDir(dir, OccluderDir.West, tile, occluder, xform.GridUid.Value, grid, occluders, xforms);
+        CheckDir(dir, OccluderDir.West, tile, worldZ, occluder, xform.GridUid.Value, grid, occluders, xforms);
 
         dir = dir.GetClockwise90Degrees();
-        CheckDir(dir, OccluderDir.North, tile, occluder, xform.GridUid.Value, grid, occluders, xforms);
+        CheckDir(dir, OccluderDir.North, tile, worldZ, occluder, xform.GridUid.Value, grid, occluders, xforms);
 
         dir = dir.GetClockwise90Degrees();
-        CheckDir(dir, OccluderDir.East, tile, occluder, xform.GridUid.Value, grid, occluders, xforms);
+        CheckDir(dir, OccluderDir.East, tile, worldZ, occluder, xform.GridUid.Value, grid, occluders, xforms);
     }
 
     private void CheckDir(
         Direction dir,
         OccluderDir occDir,
         Vector2i tile,
+        int worldZ,
         OccluderComponent occluder,
         EntityUid gridUid,
         MapGridComponent grid,
@@ -208,10 +224,13 @@ internal sealed class ClientOccluderSystem : OccluderSystem
             if (!query.TryGetComponent(neighbor, out var otherOccluder) || !otherOccluder.Enabled)
                 continue;
 
+            var otherXform = xforms.GetComponent(neighbor);
+            if (_transform.GetWorldZLevel((neighbor, otherXform, null)) != worldZ)
+                continue;
+
             occluder.Occluding |= occDir;
 
             // while we are here, also set the occluder flag for the other entity;
-            var otherXform = xforms.GetComponent(neighbor);
             DebugTools.Assert(otherXform.Anchored);
             var rot = -otherXform.LocalRotation;
             var otherOcDir = FromDirection(rot.RotateDir(dir.GetOpposite()));

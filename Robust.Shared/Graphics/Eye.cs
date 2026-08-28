@@ -31,6 +31,10 @@ namespace Robust.Shared.Graphics
             set => _coords = value;
         }
 
+        /// <inheritdoc />
+        [ViewVariables(VVAccess.ReadWrite)]
+        public int WorldZLevel { get; set; }
+
         /// <summary>
         /// Eye offset, relative to the map, and not affected by <see cref="Rotation"/>
         /// </summary>

@@ -16,8 +16,10 @@ namespace Robust.Client.Graphics.Clyde
 {
     internal partial class Clyde
     {
-        private readonly Dictionary<EntityUid, Dictionary<Vector2i, MapChunkData>> _mapChunkData =
+        private readonly Dictionary<EntityUid, Dictionary<GridChunkLayer, MapChunkData>> _mapChunkData =
             new();
+
+        private readonly List<GridChunkLayer> _staleChunkLayers = new();
 
         /// <summary>
         /// To avoid spamming errors we'll just log it once and move on.
@@ -86,18 +88,21 @@ namespace Robust.Client.Graphics.Clyde
                 }
 
                 gridProgram.SetUniform(UniIModelMatrix, _transformSystem.GetWorldMatrix(mapGrid));
+                var localZ = _transformSystem.WorldToLocalZLevel(mapGrid.Owner, eye.WorldZLevel);
                 var enumerator = mapSystem.GetMapChunks(mapGrid.Owner, mapGrid.Comp, worldBounds);
 
                 // Handle base texture updates.
                 while (enumerator.MoveNext(out var chunk))
                 {
-                    DebugTools.Assert(chunk.FilledTiles > 0);
-                    var datum = EnsureChunkInitialized(data, chunk, mapGrid);
+                    if (chunk.GetFilledTiles(localZ) == 0)
+                        continue;
+
+                    var datum = EnsureChunkInitialized(data, chunk, mapGrid, localZ);
 
                     if (!datum.Dirty)
                         continue;
 
-                    _updateChunkMesh(mapGrid, chunk, datum);
+                    _updateChunkMesh(mapGrid, chunk, datum, localZ);
 
                     if (!_drawTileEdges)
                         continue;
@@ -114,7 +119,10 @@ namespace Robust.Client.Graphics.Clyde
                             if (!mapGrid.Comp.Chunks.TryGetValue(neighbor, out var neighborChunk))
                                 continue;
 
-                            var neighborDatum = EnsureChunkInitialized(data, neighborChunk, mapGrid);
+                            if (neighborChunk.GetFilledTiles(localZ) == 0)
+                                continue;
+
+                            var neighborDatum = EnsureChunkInitialized(data, neighborChunk, mapGrid, localZ);
                             neighborDatum.EdgeDirty = true;
                         }
                     }
@@ -126,21 +134,35 @@ namespace Robust.Client.Graphics.Clyde
                     enumerator = mapSystem.GetMapChunks(mapGrid.Owner, mapGrid.Comp, worldBounds);
                     while (enumerator.MoveNext(out var chunk))
                     {
-                        var datum = data[chunk.Indices];
+                        if (chunk.GetFilledTiles(localZ) == 0)
+                            continue;
+
+                        var datum = data[new GridChunkLayer(chunk.Indices, localZ)];
                         if (datum.EdgeDirty)
-                            _updateChunkEdges(mapGrid, chunk, datum);
+                            _updateChunkEdges(mapGrid, chunk, datum, localZ);
                     }
                 }
 
                 enumerator = mapSystem.GetMapChunks(mapGrid.Owner, mapGrid.Comp, worldBounds);
 
                 // Draw chunks
+                var layerDrawn = false;
                 while (enumerator.MoveNext(out var chunk))
                 {
-                    var datum = data[chunk.Indices];
+                    if (chunk.GetFilledTiles(localZ) == 0)
+                        continue;
+
+                    var datum = data[new GridChunkLayer(chunk.Indices, localZ)];
                     DebugTools.Assert(datum.TileCount > 0);
                     if (datum.TileCount > 0)
                     {
+                        if (!layerDrawn)
+                        {
+                            _debugStats.ZLevelGridLayersDrawn += 1;
+                            layerDrawn = true;
+                        }
+
+                        _debugStats.ZLevelGridChunksDrawn += 1;
                         BindVertexArray(datum.VAO);
                         CheckGlError();
 
@@ -189,12 +211,22 @@ namespace Robust.Client.Graphics.Clyde
             CullEmptyChunks();
         }
 
-        private MapChunkData EnsureChunkInitialized(Dictionary<Vector2i, MapChunkData> data, MapChunk chunk, Entity<MapGridComponent> mapGrid)
+        private MapChunkData EnsureChunkInitialized(
+            Dictionary<GridChunkLayer, MapChunkData> data,
+            MapChunk chunk,
+            Entity<MapGridComponent> mapGrid,
+            int z)
         {
-            if (!data.TryGetValue(chunk.Indices, out var datum))
+            var key = new GridChunkLayer(chunk.Indices, z);
+            if (!data.TryGetValue(key, out var datum))
             {
-                data[chunk.Indices] = datum = new MapChunkData();
-                _initChunkBuffers(mapGrid, chunk, datum);
+                _debugStats.ZLevelGridChunkCacheMisses += 1;
+                data[key] = datum = new MapChunkData();
+                _initChunkBuffers(mapGrid, chunk, datum, z);
+            }
+            else
+            {
+                _debugStats.ZLevelGridChunkCacheHits += 1;
             }
 
             return datum;
@@ -205,21 +237,25 @@ namespace Robust.Client.Graphics.Clyde
             foreach (var (grid, chunks) in _mapChunkData)
             {
                 var gridComp = _entityManager.GetComponent<MapGridComponent>(grid);
-                foreach (var (index, chunk) in chunks)
-                {
-                    if (!chunk.Dirty || gridComp.Chunks.ContainsKey(index))
-                    {
-                        DebugTools.Assert(gridComp.Chunks[index].FilledTiles > 0);
-                        continue;
-                    }
+                _staleChunkLayers.Clear();
 
-                    DeleteChunk(chunk);
-                    chunks.Remove(index);
+                foreach (var (key, datum) in chunks)
+                {
+                    if (gridComp.Chunks.TryGetValue(key.ChunkIndices, out var chunk) &&
+                        chunk.GetFilledTiles(key.ZLevel) > 0)
+                        continue;
+
+                    DeleteChunk(datum);
+                    _staleChunkLayers.Add(key);
                 }
+
+
+                foreach (var key in _staleChunkLayers)
+                    chunks.Remove(key);
             }
         }
 
-        private void _updateChunkMesh(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum)
+        private void _updateChunkMesh(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum, int z)
         {
             Span<ushort> indexBuffer = EnsureSize(ref _chunkMeshBuilderIndexBuffer, _indicesPerChunk(chunk));
             Span<Vertex2D> vertexBuffer = EnsureSize(ref _chunkMeshBuilderVertexBuffer, _verticesPerChunk(chunk));
@@ -234,7 +270,7 @@ namespace Robust.Client.Graphics.Clyde
                 {
                     var gridX = x + chunkOriginScaled.X;
                     var gridY = y + chunkOriginScaled.Y;
-                    var tile = chunk.GetTile(x, y);
+                    var tile = chunk.GetTile(x, y, z);
 
                     // Tile render
                     if (x != chunkSize && y != chunkSize)
@@ -279,7 +315,7 @@ namespace Robust.Client.Graphics.Clyde
             datum.Dirty = false;
         }
 
-        private void _updateChunkEdges(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum)
+        private void _updateChunkEdges(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum, int z)
         {
             // Need a buffer that can potentially store all neighbor tiles
             Span<ushort> indexBuffer = EnsureSize(ref _chunkMeshBuilderIndexBuffer, _indicesPerChunk(chunk) * 8);
@@ -296,7 +332,7 @@ namespace Robust.Client.Graphics.Clyde
                 {
                     var gridX = x + chunkOriginScaled.X;
                     var gridY = y + chunkOriginScaled.Y;
-                    var tile = chunk.GetTile(x, y);
+                    var tile = chunk.GetTile(x, y, z);
                     if (!_tileDefinitionManager.TryGetDefinition(tile.TypeId, out var tileDef))
                         continue;
 
@@ -309,8 +345,9 @@ namespace Robust.Client.Graphics.Clyde
                                 continue;
 
                             var neighborIndices = new Vector2i(gridX + nx, gridY + ny);
-                            if (!maps.TryGetTile(grid.Comp, neighborIndices, out var neighborTile))
-                                continue;
+                            var neighborTile = maps.GetZLevelTileRef(
+                                grid,
+                                new ZLevelTileIndices(neighborIndices.X, neighborIndices.Y, z)).Tile;
 
                             if (!_tileDefinitionManager.TryGetDefinition(neighborTile.TypeId, out var neighborDef))
                                 continue;
@@ -352,7 +389,7 @@ namespace Robust.Client.Graphics.Clyde
             datum.EdgeDirty = false;
         }
 
-        private unsafe void _initChunkBuffers(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum)
+        private unsafe void _initChunkBuffers(Entity<MapGridComponent> grid, MapChunk chunk, MapChunkData datum, int z)
         {
             var vboSize = _verticesPerChunk(chunk) * sizeof(Vertex2D);
             var eboSize = _indicesPerChunk(chunk) * sizeof(ushort);
@@ -363,11 +400,11 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
 
             var vbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                vboSize, $"Grid {grid.Owner} chunk {chunk.Indices} VBO");
+                vboSize, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} VBO");
             var ebo = new GLBuffer(this, BufferTarget.ElementArrayBuffer, BufferUsageHint.DynamicDraw,
-                eboSize, $"Grid {grid.Owner} chunk {chunk.Indices} EBO");
+                eboSize, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} EBO");
 
-            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, vao, $"Grid {grid.Owner} chunk {chunk.Indices} VAO");
+            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, vao, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} VAO");
             SetupVAOLayout();
             CheckGlError();
 
@@ -386,11 +423,11 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
 
             var edgeVbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                vboSize * 8, $"Grid {grid.Owner} chunk {chunk.Indices} EdgeVBO");
+                vboSize * 8, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} EdgeVBO");
             var edgeEbo = new GLBuffer(this, BufferTarget.ElementArrayBuffer, BufferUsageHint.DynamicDraw,
-                eboSize * 8, $"Grid {grid.Owner} chunk {chunk.Indices} EdgeEBO");
+                eboSize * 8, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} EdgeEBO");
 
-            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, vao, $"Grid {grid.Owner} chunk {chunk.Indices} EdgeVAO");
+            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, edgeVao, $"Grid {grid.Owner} chunk {chunk.Indices} Z {z} EdgeVAO");
             SetupVAOLayout();
             CheckGlError();
 
@@ -408,6 +445,10 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
             data.VBO.Delete();
             data.EBO.Delete();
+            DeleteVertexArray(data.EdgeVAO);
+            CheckGlError();
+            data.EdgeVBO.Delete();
+            data.EdgeEBO.Delete();
         }
 
         private void _updateTileMapOnUpdate(ref TileChangedEvent args)
@@ -415,8 +456,40 @@ namespace Robust.Client.Graphics.Clyde
             var gridData = _mapChunkData.GetOrNew(args.Entity);
             foreach (var change in args.Changes)
             {
-                if (gridData.TryGetValue(change.ChunkIndex, out var data))
-                    data.Dirty = true;
+                DirtyChunkLayer(gridData, change.ChunkIndex, 0, change.EmptyChanged);
+            }
+        }
+
+        private void _updateZLevelTileMapOnUpdate(ref ZLevelTileChangedEvent args)
+        {
+            var gridData = _mapChunkData.GetOrNew(args.Entity);
+            foreach (var change in args.Changes)
+            {
+                DirtyChunkLayer(gridData, change.ChunkIndex, change.GridIndices.Z, change.EmptyChanged);
+            }
+        }
+
+        private static void DirtyChunkLayer(
+            Dictionary<GridChunkLayer, MapChunkData> gridData,
+            Vector2i chunkIndex,
+            int z,
+            bool emptyChanged)
+        {
+            if (gridData.TryGetValue(new GridChunkLayer(chunkIndex, z), out var data))
+                data.Dirty = true;
+
+            if (!emptyChanged)
+                return;
+
+            // A layer that became empty will be skipped before its mesh can invalidate adjacent edge caches.
+            for (var x = -1; x <= 1; x++)
+            {
+                for (var y = -1; y <= 1; y++)
+                {
+                    var neighbor = new GridChunkLayer(chunkIndex + new Vector2i(x, y), z);
+                    if (gridData.TryGetValue(neighbor, out var neighborData))
+                        neighborData.EdgeDirty = true;
+                }
             }
         }
 
@@ -528,5 +601,7 @@ namespace Robust.Client.Graphics.Clyde
             {
             }
         }
+
+        private readonly record struct GridChunkLayer(Vector2i ChunkIndices, int ZLevel);
     }
 }

@@ -159,6 +159,7 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
         SerializationTestHelper.LoadTileDefs(server.ProtoMan, tileMan, "space");
         var upperTile = server.ProtoMan.Index<TileDef>("b");
         var zOnlyTile = new ZLevelTileIndices(32, 0, 2);
+        var transientTile = new ZLevelTileIndices(47, 15, 3);
 
         MapId mapId = default;
 
@@ -170,6 +171,17 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
 
             mapSys.SetZLevelTile(gridUid, grid, zOnlyTile, new Tile(upperTile.TileId));
             Assert.That(mapSys.GetTileRef(gridUid, grid, new Vector2i(zOnlyTile.X, zOnlyTile.Y)).Tile.IsEmpty, Is.True);
+            Assert.That(grid.LocalAABB.Contains(new Vector2(zOnlyTile.X + 0.5f, zOnlyTile.Y + 0.5f)), Is.True);
+
+            mapSys.SetZLevelTile(gridUid, grid, transientTile, new Tile(upperTile.TileId));
+            Assert.That(grid.LocalAABB.Contains(new Vector2(transientTile.X + 0.5f, transientTile.Y + 0.5f)), Is.True);
+
+            mapSys.SetZLevelTile(gridUid, grid, transientTile, Tile.Empty);
+            Assert.Multiple(() =>
+            {
+                Assert.That(grid.LocalAABB.Contains(new Vector2(zOnlyTile.X + 0.5f, zOnlyTile.Y + 0.5f)), Is.True);
+                Assert.That(grid.LocalAABB.Contains(new Vector2(transientTile.X + 0.5f, transientTile.Y + 0.5f)), Is.False);
+            });
         });
 
         await server.WaitAssertion(() => Assert.That(loader.TrySaveMap(mapId, mapPath)));
@@ -189,6 +201,7 @@ internal sealed class ZLevelSerializationTest : RobustIntegrationTest
                 Assert.That(mapSys.GetTileRef(loadedGrid.Owner, loadedGrid.Comp, new Vector2i(zOnlyTile.X, zOnlyTile.Y)).Tile.IsEmpty, Is.True);
                 Assert.That(mapSys.GetZLevelTileRef(loadedGrid.Owner, loadedGrid.Comp, zOnlyTile).Tile.TypeId, Is.EqualTo(upperTile.TileId));
                 Assert.That(mapSys.GetExistingZLevelLayers(loadedGrid.Owner, loadedGrid.Comp), Is.EquivalentTo(new[] { 2 }));
+                Assert.That(loadedGrid.Comp.LocalAABB.Contains(new Vector2(zOnlyTile.X + 0.5f, zOnlyTile.Y + 0.5f)), Is.True);
             });
         });
     }

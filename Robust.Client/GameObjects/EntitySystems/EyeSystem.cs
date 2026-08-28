@@ -56,13 +56,16 @@ public sealed class EyeSystem : SharedEyeSystem
             if (eyeComponent.Eye == null)
                 continue;
 
-            if (!TryComp<TransformComponent>(eyeComponent.Target, out var xform))
+            var eyeTarget = eyeComponent.Target ?? uid;
+            if (!TryComp(eyeTarget, out TransformComponent? xform))
             {
                 xform = Transform(uid);
                 eyeComponent.Target = null;
+                eyeTarget = uid;
             }
 
             eyeComponent.Eye.Position = TransformSystem.GetMapCoordinates(xform);
+            eyeComponent.Eye.WorldZLevel = TransformSystem.GetWorldZLevel((eyeTarget, xform, null));
         }
     }
 }
