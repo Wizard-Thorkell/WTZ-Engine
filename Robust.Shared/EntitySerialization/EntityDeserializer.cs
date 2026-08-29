@@ -1182,13 +1182,10 @@ public sealed class EntityDeserializer :
             if (CurrentComponent == "Transform")
                 return EntityUid.Invalid;
 
-            if (!Options.LogInvalidEntities)
-                return EntityUid.Invalid;
-
             msg = CurrentReadingEntity is not { } curr
                 ? $"Encountered invalid EntityUid reference"
                 : $"Encountered invalid EntityUid reference while reading entity {curr.YamlId}, component: {CurrentComponent}";
-            _log.Error(msg);
+            ReportInvalidEntityReference(node, msg);
             return EntityUid.Invalid;
         }
 
@@ -1198,8 +1195,19 @@ public sealed class EntityDeserializer :
         msg = CurrentReadingEntity is not { } ent
             ? "Encountered unknown entity yaml uid"
             : $"Encountered unknown entity yaml uid while reading entity {ent.YamlId}, component: {CurrentComponent}";
-        _log.Error(msg);
+        ReportInvalidEntityReference(node, msg);
         return EntityUid.Invalid;
+    }
+
+    private void ReportInvalidEntityReference(ValueDataNode node, string message)
+    {
+        Result.InvalidEntityReferences.Add(new EntityReferenceError(
+            CurrentReadingEntity?.YamlId,
+            CurrentComponent,
+            node.Value));
+
+        if (Options.LogInvalidEntities)
+            _log.Error(message);
     }
 
     ValidationNode ITypeValidator<NetEntity, ValueDataNode>.Validate(
@@ -1230,7 +1238,13 @@ public sealed class EntityDeserializer :
         if (EntMan.TryGetNetEntity(uid, out var nent))
             return nent.Value;
 
-        _log.Error($"Failed to get NetEntity entity {EntMan.ToPrettyString(uid)}");
+        if (uid.IsValid())
+        {
+            ReportInvalidEntityReference(
+                node,
+                $"Failed to get NetEntity entity {EntMan.ToPrettyString(uid)}");
+        }
+
         return NetEntity.Invalid;
     }
 

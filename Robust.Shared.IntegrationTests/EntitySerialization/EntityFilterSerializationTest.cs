@@ -98,21 +98,31 @@ internal sealed partial class EntityFilterSerializationTest : RobustIntegrationT
         });
         Assert.That(entMan.Count<EntitySaveTestComponent>(), Is.Zero);
 
-        var loadOptions = DeserializationOptions.Default with { LogInvalidEntities = false };
+        var loadOptions = MapLoadOptions.Default;
+        loadOptions.ExpectedCategory = FileCategory.Map;
+        loadOptions.DeserializationOptions.LogInvalidEntities = false;
+        LoadResult? filteredResult = null;
         await server.WaitAssertion(() =>
-            Assert.That(loader.TryLoadMap(filteredPath, out _, out _, loadOptions), Is.True));
+            Assert.That(loader.TryLoadGeneric(filteredPath, out filteredResult, loadOptions), Is.True));
+        Assert.That(filteredResult, Is.Not.Null);
+        var loadedFilteredResult = filteredResult!;
 
         Assert.Multiple(() =>
         {
             Assert.That(entMan.Count<EntitySaveTestComponent>(), Is.EqualTo(2));
             Assert.That(Find(nameof(persistent), entMan).Comp2.Entity, Is.EqualTo(EntityUid.Invalid));
             Assert.That(entMan.HasComponent<EntityFilterTestComponent>(Find(nameof(persistent), entMan)), Is.False);
+            Assert.That(loadedFilteredResult.InvalidEntityReferences, Has.Count.EqualTo(1));
+            Assert.That(loadedFilteredResult.InvalidEntityReferences[0].Component, Is.EqualTo("EntitySaveTest"));
+            Assert.That(loadedFilteredResult.InvalidEntityReferences[0].SerializedValue, Is.EqualTo("invalid"));
         });
-        var filteredMap = Find(nameof(map), entMan);
-        await server.WaitPost(() => mapSystem.DeleteMap(filteredMap.Comp1!.MapID));
+        await server.WaitPost(() => loader.Delete(loadedFilteredResult));
 
+        LoadResult? unfilteredResult = null;
         await server.WaitAssertion(() =>
-            Assert.That(loader.TryLoadMap(unfilteredPath, out _, out _), Is.True));
+            Assert.That(loader.TryLoadGeneric(unfilteredPath, out unfilteredResult, loadOptions), Is.True));
+        Assert.That(unfilteredResult, Is.Not.Null);
+        var loadedUnfilteredResult = unfilteredResult!;
 
         var loadedPersistent = Find(nameof(persistent), entMan);
         var loadedTransient = Find(nameof(transient), entMan);
@@ -124,7 +134,9 @@ internal sealed partial class EntityFilterSerializationTest : RobustIntegrationT
             Assert.That(loadedPersistent.Comp2.Entity, Is.EqualTo(loadedReferenced.Owner));
             Assert.That(loadedTransientChild.Comp1.ParentUid, Is.EqualTo(loadedTransient.Owner));
             Assert.That(entMan.GetComponent<EntityFilterTestComponent>(loadedPersistent).Value, Is.EqualTo(42));
+            Assert.That(loadedUnfilteredResult.InvalidEntityReferences, Is.Empty);
         });
+        await server.WaitPost(() => loader.Delete(loadedUnfilteredResult));
     }
 
     [Reflect(false)]

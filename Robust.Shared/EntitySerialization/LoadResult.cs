@@ -68,4 +68,18 @@ public sealed class LoadResult
     /// <see cref="MapComponent"/>, and were not listed as orphans
     /// </summary>
     public readonly HashSet<EntityUid> NullspaceEntities = new();
+
+    /// <summary>
+    /// Entity references that could not be resolved while reading the file.
+    /// Transform roots with an explicit invalid parent are not errors and are omitted.
+    /// </summary>
+    public readonly List<EntityReferenceError> InvalidEntityReferences = new();
 }
+
+/// <summary>
+/// Describes an entity reference that could not be restored from serialized data.
+/// </summary>
+public readonly record struct EntityReferenceError(
+    int? SourceYamlUid,
+    string? Component,
+    string SerializedValue);
