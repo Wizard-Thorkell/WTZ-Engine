@@ -179,6 +179,7 @@ public sealed partial class AudioComponent : Component, IAudioSource
     /// Not replicated as audio always tracks the entity's position.
     /// </remarks>
     [ViewVariables]
+    [Access(Other = AccessPermissions.ReadWriteExecute)]
     public Vector2 Position
     {
         get => Source.Position;
