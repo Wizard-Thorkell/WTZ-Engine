@@ -56,8 +56,11 @@ public sealed partial class MapLoaderSystem
             ExpectPreInit = (entities.All(x => LifeStage(x) < EntityLifeStage.MapInitialized))
         };
 
-        var ev = new BeforeSerializationEvent(entities, maps, opts.Category);
-        RaiseLocalEvent(ev);
+        if (!opts.SuppressMapSerializationEvents)
+        {
+            var ev = new BeforeSerializationEvent(entities, maps, opts.Category);
+            RaiseLocalEvent(ev);
+        }
 
         var serializer = new EntitySerializer(_dependency, opts);
         serializer.OnIsSerializeable += OnIsSerializable;
@@ -66,8 +69,11 @@ public sealed partial class MapLoaderSystem
         var cat = serializer.GetCategory();
         yamlIds = serializer.YamlUidMap.ToDictionary();
 
-        var ev2 = new AfterSerializationEvent(entities, data, cat);
-        RaiseLocalEvent(ev2);
+        if (!opts.SuppressMapSerializationEvents)
+        {
+            var ev2 = new AfterSerializationEvent(entities, data, cat);
+            RaiseLocalEvent(ev2);
+        }
 
         Log.Debug($"Serialized {serializer.EntityData.Count} entities in {_stopwatch.Elapsed}");
         return (data, cat);
@@ -351,7 +357,6 @@ public sealed partial class MapLoaderSystem
 
         var entities = EntityManager.GetEntities().ToHashSet();
         var maps = _mapSystem.Maps.Keys.ToHashSet();
-        var ev = new BeforeSerializationEvent(entities, maps, FileCategory.Save);
         var serializer = new EntitySerializer(_dependency, opts);
 
         // Remove any non-serializable entities and their children (prevent error spam)
@@ -385,14 +390,21 @@ public sealed partial class MapLoaderSystem
 
         try
         {
-            RaiseLocalEvent(ev);
+            if (!opts.SuppressMapSerializationEvents)
+            {
+                var ev = new BeforeSerializationEvent(entities, maps, FileCategory.Save);
+                RaiseLocalEvent(ev);
+            }
             serializer.OnIsSerializeable += OnIsSerializable;
             serializer.SerializeEntities(entities);
             data = serializer.Write();
             var cat = serializer.GetCategory();
             DebugTools.AssertEqual(cat, FileCategory.Save);
-            var ev2 = new AfterSerializationEvent(entities, data, cat);
-            RaiseLocalEvent(ev2);
+            if (!opts.SuppressMapSerializationEvents)
+            {
+                var ev2 = new AfterSerializationEvent(entities, data, cat);
+                RaiseLocalEvent(ev2);
+            }
 
             Log.Debug($"Serialized {serializer.EntityData.Count} entities in {_stopwatch.Elapsed}");
         }

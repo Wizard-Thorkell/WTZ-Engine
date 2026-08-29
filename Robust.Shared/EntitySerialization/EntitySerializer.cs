@@ -193,9 +193,23 @@ public sealed class EntitySerializer : ISerializationContext,
         if (ent.Comp.EntityPrototype?.MapSavable == false)
             return false;
 
+        if (!PassesEntityFilter(ent))
+            return false;
+
         bool serializable = true;
         OnIsSerializeable?.Invoke(ent!, ref serializable);
         return serializable;
+    }
+
+    private bool PassesEntityFilter(Entity<MetaDataComponent?> ent)
+    {
+        if (Options.EntityFilter is not { } filter)
+            return true;
+
+        if (ent.Comp == null && !EntMan.TryGetComponent(ent.Owner, out ent.Comp))
+            return true;
+
+        return filter(ent!);
     }
 
     #region Serialize API
@@ -537,9 +551,10 @@ public sealed class EntitySerializer : ISerializationContext,
             xform._localRotation = 0;
         }
 
+        HashSet<string>? filteredComponents;
         try
         {
-            SerializeComponents(uid, cache, components);
+            filteredComponents = SerializeComponents(uid, cache, components);
         }
         catch(Exception e)
         {
@@ -580,7 +595,8 @@ public sealed class EntitySerializer : ISerializationContext,
         {
             // try comp instead of has-comp as it checks whether the component is supposed to have been
             // deleted.
-            if (EntMan.TryGetComponent(uid, comp.Component.GetType(), out _))
+            if (EntMan.TryGetComponent(uid, comp.Component.GetType(), out _) &&
+                (filteredComponents == null || !filteredComponents.Contains(name)))
                 continue;
 
             missingComponents ??= new();
@@ -624,8 +640,12 @@ public sealed class EntitySerializer : ISerializationContext,
         }
     }
 
-    private void SerializeComponents(EntityUid uid, Dictionary<string, MappingDataNode>? cache, SequenceDataNode components)
+    private HashSet<string>? SerializeComponents(
+        EntityUid uid,
+        Dictionary<string, MappingDataNode>? cache,
+        SequenceDataNode components)
     {
+        HashSet<string>? filtered = null;
         foreach (var component in EntMan.GetComponentsInternal(uid))
         {
             var compType = component.GetType();
@@ -633,6 +653,12 @@ public sealed class EntitySerializer : ISerializationContext,
             var reg = _factory.GetRegistration(compType);
             if (reg.Unsaved)
                 continue;
+
+            if (Options.ComponentFilter is { } filter && !filter(uid, component))
+            {
+                (filtered ??= []).Add(reg.Name);
+                continue;
+            }
 
             CurrentComponent = reg.Name;
             MappingDataNode? compMapping;
@@ -666,6 +692,8 @@ public sealed class EntitySerializer : ISerializationContext,
             compMapping.InsertAt(0, "type", new ValueDataNode(reg.Name));
             components.Add(compMapping);
         }
+
+        return filtered;
     }
 
     private Dictionary<string, MappingDataNode>? GetProtoCache(EntityPrototype? proto)
@@ -1014,6 +1042,19 @@ public sealed class EntitySerializer : ISerializationContext,
         {
             _log.Error(
                 $"{EntMan.ToPrettyString(CurrentEntity)}:{CurrentComponent} is attempting to serialize references to a truncated entity {EntMan.ToPrettyString(Truncate)}.");
+        }
+
+        if (!PassesEntityFilter(value))
+        {
+            if (Options.MissingEntityBehaviour != MissingEntityBehaviour.Ignore)
+            {
+                _log.Error(
+                    $"Encountered a reference to an entity excluded by the operation filter " +
+                    $"{EntMan.ToPrettyString(value)} " +
+                    $"while serializing {EntMan.ToPrettyString(CurrentEntity)}.");
+            }
+
+            return InvalidNode;
         }
 
         switch (Options.MissingEntityBehaviour)

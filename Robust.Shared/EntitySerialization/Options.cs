@@ -41,12 +41,38 @@ public record struct SerializationOptions
     /// </summary>
     public bool ExpectPreInit;
 
+    /// <summary>
+    /// Optional operation-local filter that can reject entities from this serialization.
+    /// Rejected entities cannot be auto-included through entity references.
+    /// </summary>
+    /// <remarks>
+    /// This can only make an otherwise serializable entity non-serializable. It cannot
+    /// override an entity prototype whose map-save behavior is disabled.
+    /// </remarks>
+    public EntitySerializationFilter? EntityFilter;
+
+    /// <summary>
+    /// Optional operation-local filter that can reject components from serialized entities.
+    /// A rejected prototype component is recorded as missing so it does not reappear on load.
+    /// </summary>
+    public ComponentSerializationFilter? ComponentFilter;
+
+    /// <summary>
+    /// Whether map serialization lifecycle events should be suppressed for this operation.
+    /// Enable this only when the caller provides its own validation and requires a
+    /// read-only snapshot of live entities.
+    /// </summary>
+    public bool SuppressMapSerializationEvents;
+
     public FileCategory Category;
 
     public SerializationOptions()
     {
     }
 }
+
+public delegate bool EntitySerializationFilter(Entity<MetaDataComponent> entity);
+public delegate bool ComponentSerializationFilter(EntityUid entity, IComponent component);
 
 public record struct DeserializationOptions()
 {

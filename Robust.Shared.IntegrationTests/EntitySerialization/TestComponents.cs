@@ -42,6 +42,13 @@ internal sealed partial class EntitySaveTestComponent : Component
     }
 }
 
+[RegisterComponent]
+internal sealed partial class EntityFilterTestComponent : Component
+{
+    [DataField]
+    public int Value;
+}
+
 /// <summary>
 /// Dummy tile definition for serializing grids.
 /// </summary>
