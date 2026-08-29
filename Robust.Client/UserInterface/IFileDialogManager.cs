@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Robust.Client.Graphics;
@@ -48,6 +49,24 @@ namespace Robust.Client.UserInterface
             bool truncate = true,
             FileAccess access = FileAccess.ReadWrite,
             FileShare share = FileShare.None);
+
+        /// <summary>
+        ///     Select a destination and atomically replace it with the provided data.
+        /// </summary>
+        /// <remarks>
+        ///     The data is written and flushed to a temporary file in the destination directory
+        ///     before the selected path is replaced. The existing destination is left unchanged
+        ///     if writing or flushing the temporary file fails.
+        /// </remarks>
+        /// <returns>
+        ///     <see langword="true" /> after the destination is replaced, or
+        ///     <see langword="false" /> if the user cancels the dialog.
+        /// </returns>
+        /// <param name="data">The complete file contents to write.</param>
+        /// <param name="filters">Filters for file types that the user can select.</param>
+        Task<bool> SaveFileAtomic(
+            ReadOnlyMemory<byte> data,
+            FileDialogFilters? filters = null);
     }
 
     /// <summary>

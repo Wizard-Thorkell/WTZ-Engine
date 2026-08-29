@@ -63,6 +63,13 @@ internal sealed class FileDialogManager(IClydeInternal clyde) : IFileDialogManag
             return (File.Open(name, FileMode.Create, access, share), false);
         }
     }
+
+    public Task<bool> SaveFileAtomic(
+        ReadOnlyMemory<byte> data,
+        FileDialogFilters? filters = null)
+    {
+        return AtomicFileWriter.SaveAsync(clyde.FileDialogImpl, data, filters);
+    }
 }
 
 public sealed class OpenFileCommand : LocalizedCommands
