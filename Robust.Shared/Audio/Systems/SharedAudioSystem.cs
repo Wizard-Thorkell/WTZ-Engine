@@ -252,17 +252,21 @@ public abstract partial class SharedAudioSystem : EntitySystem
     private void OnAudioGetStateAttempt(EntityUid uid, AudioComponent component, ref ComponentGetStateAttemptEvent args)
     {
         var playerEnt = args.Player?.AttachedEntity;
-
-        if (component.ExcludedEntity != null && playerEnt == component.ExcludedEntity)
-        {
+        if (!IsAudioTargetAllowed(component, playerEnt))
             args.Cancelled = true;
-            return;
-        }
+    }
 
-        if (playerEnt != null && component.IncludedEntities != null && !component.IncludedEntities.Contains(playerEnt.Value))
-        {
-            args.Cancelled = true;
-        }
+    /// <summary>
+    /// Returns whether an audio component may be networked to the entity attached to a session.
+    /// </summary>
+    public static bool IsAudioTargetAllowed(AudioComponent component, EntityUid? target)
+    {
+        if (component.ExcludedEntity != null && target == component.ExcludedEntity)
+            return false;
+
+        return target == null ||
+               component.IncludedEntities == null ||
+               component.IncludedEntities.Contains(target.Value);
     }
 
     /// <summary>
