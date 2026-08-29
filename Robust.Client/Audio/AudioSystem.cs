@@ -55,6 +55,16 @@ public sealed partial class AudioSystem : SharedAudioSystem
     public event Action<EntityUid, AudioComponent, TransformComponent, MapCoordinates>? ProcessStreamOverride;
 
     /// <summary>
+    /// Optional post-processing invoked after the default positional audio path, including paths that mute the stream.
+    /// Content may adjust the initialized source without duplicating native startup, map, range, or tracking behavior.
+    /// </summary>
+    /// <remarks>
+    /// This event runs from the parallel audio update and only supports a single invocation target.
+    /// </remarks>
+    [PublicAPI]
+    public event Action<EntityUid, AudioComponent, TransformComponent, MapCoordinates>? StreamProcessed;
+
+    /// <summary>
     /// An optional method that, if provided, will override the behavior of <see cref="GetOcclusion"/>.
     /// Contains the same parameters in the same order as the method it overrides.
     /// </summary>
@@ -371,6 +381,17 @@ public sealed partial class AudioSystem : SharedAudioSystem
             return; // Exit and do not perform remaining function behavior
         }
 
+        ProcessStreamDefault(entity, component, xform, listener);
+
+        if (StreamProcessed is null)
+            return;
+
+        DebugTools.Assert(StreamProcessed.HasSingleTarget, $"Event {nameof(StreamProcessed)} has multiple invocation targets. This is not permitted.");
+        StreamProcessed.Invoke(entity, component, xform, listener);
+    }
+
+    private void ProcessStreamDefault(EntityUid entity, AudioComponent component, TransformComponent xform, MapCoordinates listener)
+    {
         // TODO:
         // I Originally tried to be fancier here but it caused audio issues so just trying
         // to replicate the old behaviour for now.
